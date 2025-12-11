@@ -5,29 +5,50 @@
  * - Initialize sensor and filesystem
  * - Read sensor data periodically
  * - Calculate 8-hour TWA for particulate matter
- * - Log all data to CSV file
+ * - Log all data to CSV file with metadata
  * - Print readings to Serial
+ * - Interactive serial commands for control
  * 
  * Hardware:
  * - ESP32-S3 board
  * - Sensirion SEN66 sensor connected via I2C
- *   - SDA: GPIO 42 (default)
- *   - SCL: GPIO 41 (default)
+ *   - SDA: GPIO 3
+ *   - SCL: GPIO 4
+ * 
+ * Serial Commands:
+ * - help, h, ?              - Show help message
+ * - dump, d                 - Display CSV file contents
+ * - list, ls                - List all files
+ * - clear, c                - Clear CSV log file
+ * - sync <unix_time>        - Synchronize time
+ * - config, cfg             - Show configuration
+ * - set <key> <value>       - Set config (measurement, logging)
+ * - metadata, meta          - Show all metadata
+ * - meta <key> <value>      - Set metadata value
  */
 
 #include <Arduino.h>
+#include <LittleFS.h>
 #include "SEN66Dosimetry.h"
 
 // I2C Pin Definitions
-#define SDA_PIN 42
-#define SCL_PIN 41
+#define SDA_PIN 3
+#define SCL_PIN 4
 
 // Create sensor instance with 60-second sampling interval
 SEN66Dosimetry sensor(Wire, 60);
 
 // Timing variables
 unsigned long lastReadTime = 0;
-const unsigned long READ_INTERVAL = 60000;  // 60 seconds in milliseconds
+unsigned long lastLogTime = 0;
+
+// Forward declarations
+void handleSerialCommands();
+void showHelp();
+void dumpCSVFile();
+void listFiles();
+void showMetadata();
+void printSensorData(const SensorData &data);
 
 void setup() {
     Serial.begin(115200);
@@ -35,24 +56,60 @@ void setup() {
         delay(10);  // Wait for Serial connection
     }
     
-    Serial.println("\n=== SEN66-Dosimetry Basic Logger ===");
-    Serial.println("Initializing sensor and filesystem...");
+    Serial.println("\n╔════════════════════════════════════════════════════════════╗");
+    Serial.println("║         SEN66-Dosimetry Air Quality Monitor                ║");
+    Serial.println("║              with Metadata Support                         ║");
+    Serial.println("╚════════════════════════════════════════════════════════════╝\n");
+    
+    Serial.println("🔧 Initializing sensor and filesystem...");
     
     // Initialize the library with defined I2C pins
     if (!sensor.begin(SDA_PIN, SCL_PIN)) {
-        Serial.println("ERROR: Failed to initialize SEN66-Dosimetry!");
-        Serial.println("Check connections and try again.");
+        Serial.println("\n❌ ERROR: Failed to initialize SEN66-Dosimetry!");
+        Serial.println("Troubleshooting:");
+        Serial.println("  1. Check I2C wiring (SDA=GPIO3, SCL=GPIO4)");
+        Serial.println("  2. Verify sensor power (3.3V or 5V)");
+        Serial.println("  3. Ensure sensor I2C address is 0x6B");
+        Serial.println("  4. Check LittleFS partition is available");
+        Serial.println();
+        Serial.println("System halted. Reset to try again.");
+        
         while (1) {
             delay(1000);
         }
     }
     
-    Serial.println("Initialization successful!");
-    Serial.println("Starting measurement loop...\n");
+    Serial.println("✓ Initialization successful!");
+    Serial.println();
     
-    // Print CSV header for serial output
-    Serial.println("Time(s),Temp(°C),RH(%),VOC,NOx,PM1.0,PM2.5,PM4.0,PM10,CO2(ppm),Dew(°C),HI(°C),AH(g/m³),TWA_PM1.0,TWA_PM2.5,TWA_PM4.0,TWA_PM10");
-    Serial.println("---");
+    // Display current configuration
+    SensorConfig config = sensor.getConfig();
+    Serial.println("📊 Starting continuous monitoring...");
+    Serial.printf("   Measurement interval: %d seconds\n", config.measurementInterval);
+    Serial.printf("   Logging interval: %d seconds\n", config.loggingInterval);
+    Serial.println("   TWA calculation window: 8 hours");
+    Serial.println("   Log file: /sensor_log.csv");
+    
+    if (sensor.isTimeSynchronized()) {
+        Serial.printf("   Time sync: Synchronized (Unix: %lu)\n", sensor.getUnixTime());
+    } else {
+        Serial.println("   Time sync: Not synchronized (using uptime)");
+    }
+    
+    Serial.println();
+    Serial.println("💡 Serial Commands Available:");
+    Serial.println("   help            - Show available commands");
+    Serial.println("   dump            - Display CSV file contents");
+    Serial.println("   list            - List all files in filesystem");
+    Serial.println("   clear           - Clear the CSV log file");
+    Serial.println("   sync <time>     - Synchronize Unix timestamp");
+    Serial.println("   config          - Show current configuration");
+    Serial.println("   set <key> <val> - Set configuration value");
+    Serial.println("   metadata        - Show all metadata");
+    Serial.println("   meta <key> <val> - Set metadata value");
+    Serial.println();
+    
+    delay(2000);  // Allow sensor to stabilize
 }
 
 void loop() {

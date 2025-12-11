@@ -1,10 +1,24 @@
 /**
+ * ===============================================================================
  * SEN66Dosimetry.h
  * 
  * Open-Source Arduino/PlatformIO Library for ESP32-S3
  * Advanced Air-Quality Acquisition, Dosimetry, and CSV Logging for the Sensirion SEN66
  * 
- * MIT License
+ * Project: SEN66-Dosimetry
+ * Creator: Christopher Lee
+ * License: GNU General Public License v3.0 (GPLv3)
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ * ===============================================================================
  */
 
 #ifndef SEN66_DOSIMETRY_H
@@ -16,6 +30,7 @@
 #include <SensirionI2cSen66.h>
 #include <Preferences.h>
 #include <vector>
+#include <map>
 
 // Default sampling interval (seconds) for TWA calculations
 #define DEFAULT_SAMPLING_INTERVAL 60
@@ -30,6 +45,7 @@ struct SensorConfig {
     uint16_t measurementInterval;  // Seconds between measurements
     uint16_t loggingInterval;      // Seconds between log entries (0 = log every measurement)
     uint16_t samplingInterval;     // Seconds for TWA calculations
+    int16_t utcOffset;             // UTC offset in hours (-12 to +14)
 };
 
 /**
@@ -204,6 +220,80 @@ public:
      */
     uint16_t getLoggingInterval() const;
 
+    /**
+     * @brief Set UTC offset for localized timestamps
+     * @param offset UTC offset in hours (-12 to +14)
+     */
+    void setUtcOffset(int16_t offset);
+
+    /**
+     * @brief Get UTC offset
+     * @return Current UTC offset in hours
+     */
+    int16_t getUtcOffset() const;
+
+    /**
+     * @brief Convert Unix timestamp to localized human-readable format
+     * @param unixTime Unix timestamp
+     * @return Formatted string in yyyy-mm-dd_hh:mm:ss format
+     */
+    String formatLocalTime(uint32_t unixTime) const;
+
+    // Metadata management
+    /**
+     * @brief Set a metadata key-value pair
+     * @param key Metadata key
+     * @param value Metadata value
+     * @param clearLog If true, will clear existing log file (changes CSV structure)
+     */
+    void setMetadata(const String &key, const String &value, bool clearLog = false);
+    
+    /**
+     * @brief Get a metadata value by key
+     * @param key Metadata key
+     * @param defaultValue Default value if key not found
+     * @return Metadata value or default
+     */
+    String getMetadata(const String &key, const String &defaultValue = "") const;
+    
+    /**
+     * @brief Check if log file needs to be cleared for metadata change
+     * @param key Metadata key being changed
+     * @return True if log file should be cleared
+     */
+    bool shouldClearLogForMetadata(const String &key) const;
+    
+    /**
+     * @brief Get all metadata keys
+     * @return Vector of all metadata keys
+     */
+    std::vector<String> getMetadataKeys() const;
+    
+    /**
+     * @brief Convenience method to set user metadata
+     * @param user User name
+     */
+    void setUser(const String &user);
+    
+    /**
+     * @brief Convenience method to set project metadata
+     * @param project Project name
+     */
+    void setProject(const String &project);
+    
+    /**
+     * @brief Convenience method to set location metadata
+     * @param location Location description
+     */
+    void setLocation(const String &location);
+    
+    /**
+     * @brief Reset metadata to default state (user, project, location with empty values)
+     * Deletes all non-system metadata key-value pairs
+     * @return true if successful
+     */
+    bool resetMetadata();
+
 private:
     TwoWire &_wire;
     uint16_t _samplingInterval;
@@ -213,6 +303,9 @@ private:
     // Configuration
     SensorConfig _config;
     Preferences _preferences;
+    
+    // Metadata storage
+    std::map<String, String> _metadata;
     
     // Time synchronization
     uint32_t _timeOffset;      // Offset to convert millis() to Unix time
@@ -246,6 +339,10 @@ private:
     bool ensureLogFileExists();
     bool appendToLogFile(const String &line);
     String sensorDataToCSV(const SensorData &data);
+    
+    // Metadata persistence
+    void loadMetadata();
+    void saveMetadata();
 };
 
 #endif // SEN66_DOSIMETRY_H

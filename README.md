@@ -5,13 +5,13 @@
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Library-orange)](https://platformio.org/)
 [![Framework](https://img.shields.io/badge/Framework-Arduino-blue)](https://www.arduino.cc/)
 [![Platform](https://img.shields.io/badge/Platform-ESP32--S3-green)](https://www.espressif.com/en/products/socs/esp32-s3)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 ## Overview
 
-SEN66-Dosimetry is an open-source PlatformIO/Arduino library for ESP32-S3 devices that provides high-integrity sensor acquisition, derived environmental calculations, particulate dosimetry, and CSV data logging for the Sensirion SEN66 air-quality module.
+SEN66-Dosimetry is an open-source PlatformIO/Arduino library for ESP32-S3 devices that provides high-integrity sensor acquisition, derived environmental calculations, particulate dosimetry, CSV data logging, and interactive command-line interface for the Sensirion SEN66 air-quality module.
 
-The library is **headless** and provides no display/UI components. Its purpose is to serve as a robust sensor-data and exposure-analysis engine for long-duration environmental monitoring.
+The system includes both model firmware for ESP32-S3 and a comprehensive Python CLI tool for device interaction, configuration, and data management.
 
 ## Features
 
@@ -44,6 +44,24 @@ The library is **headless** and provides no display/UI components. Its purpose i
 - Buffered writes to minimize flash wear
 - Line-by-line retrieval
 - Safe erase behavior
+- **Localized timestamps** with configurable UTC offset (-12 to +14 hours)
+- Dual timestamp format: Unix timestamp + human-readable local time
+
+### 🖥️ Interactive CLI Tool
+- **Python-based command-line interface** (`sen66_cli.py`)
+- Real-time sensor monitoring and configuration
+- CSV download and backup functionality
+- Timezone/UTC offset configuration
+- Metadata management system
+- Serial command interface for firmware interaction
+- Auto-detection of ESP32-S3 devices
+
+### ⚙️ Configuration & Metadata
+- **Persistent configuration** stored in NVS (Non-Volatile Storage)
+- Configurable measurement and logging intervals
+- **UTC offset support** for localized timestamps
+- Metadata system for project/user/location tracking
+- Serial command interface (config, prefs, meta, etc.)
 
 ## Hardware Requirements
 
@@ -165,7 +183,40 @@ struct SensorData {
 ## CSV Format
 
 ```csv
-timestamp,temperature,humidity,vocIndex,noxIndex,pm1_0,pm2_5,pm4_0,pm10,co2,dewPoint,heatIndex,absoluteHumidity,twa_pm1_0,twa_pm2_5,twa_pm4_0,twa_pm10
+timestamp,local_time,pm1_0,pm2_5,pm10_0,pm4_0,humidity,temperature,voc_index,nox_index,pm1_0_twa,pm2_5_twa,pm10_0_twa,pm4_0_twa
+```
+
+**Note**: The `local_time` column shows timestamps in `yyyy-mm-dd_hh:mm:ss` format adjusted by the configured UTC offset.
+
+## CLI Tool Usage
+
+### Interactive Console
+```bash
+python sen66_cli.py console
+```
+
+### Available Commands
+- `status` - Show current sensor measurements
+- `config` - Display current configuration including UTC offset
+- `timezone <offset>` - Set UTC offset (-12 to +14 hours)
+- `prefs <key> <value>` - Configure measurement/logging intervals
+- `download [file]` - Download CSV log file
+- `timesync` - Synchronize device time with PC
+- `metadata` - Show/manage metadata (user, project, location)
+- `clear` - Clear CSV log file
+- `monitor` - Real-time sensor monitoring
+- `about` - Show project information and license
+
+### Command Line Examples
+```bash
+# Set timezone to EST (UTC-5)
+python sen66_cli.py timezone --offset -5
+
+# Download log file
+python sen66_cli.py download --output my_data.csv
+
+# Show current status
+python sen66_cli.py status
 ```
 
 ## Examples
@@ -197,7 +248,9 @@ Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for gu
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU General Public License v3.0 (GPLv3) - see the [LICENSE](LICENSE) file for details.
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
 ## References
 
@@ -207,7 +260,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Author
 
-Your Name - [your.email@example.com](mailto:your.email@example.com)
+Christopher Lee
 
 ## Acknowledgments
 

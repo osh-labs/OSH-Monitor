@@ -1,13 +1,28 @@
 /**
+ * ===============================================================================
  * SEN66-Dosimetry Main Application
  * 
  * Advanced air quality monitoring with the Sensirion SEN66 sensor
  * Includes real-time measurements, 8-hour TWA calculations, and CSV logging
  * 
+ * Project: SEN66-Dosimetry
+ * Creator: Christopher Lee
+ * License: GNU General Public License v3.0 (GPLv3)
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ * 
  * Hardware Requirements:
  * - ESP32-S3 (Adafruit Feather ESP32-S3 Reverse TFT)
  * - Sensirion SEN66 air quality sensor
- * 
+ * =============================================================================== 
  * I2C Connections:
  * - SDA: GPIO 3
  * - SCL: GPIO 4
@@ -33,6 +48,7 @@ void handleSerialCommands();
 void dumpCSVFile();
 void listFiles();
 void showHelp();
+void showMetadata();
 
 void printWelcomeBanner() {
     Serial.println("\n");
@@ -110,6 +126,7 @@ void setup() {
     Serial.println("📊 Starting continuous monitoring...");
     Serial.printf("   Measurement interval: %d seconds\n", config.measurementInterval);
     Serial.printf("   Logging interval: %d seconds\n", config.loggingInterval);
+    Serial.printf("   UTC offset: %+d hours\n", config.utcOffset);
     Serial.println("   TWA calculation window: 8 hours");
     Serial.println("   Log file: /sensor_log.csv");
     Serial.println("   Time sync: Not synchronized (using uptime)");
@@ -119,9 +136,12 @@ void setup() {
     Serial.println("   dump            - Display CSV file contents");
     Serial.println("   list            - List all files in filesystem");
     Serial.println("   clear           - Clear the CSV log file");
-    Serial.println("   sync <time>     - Synchronize Unix timestamp");
+    Serial.println("   timesync <time> - Synchronize Unix timestamp");
     Serial.println("   config          - Show current configuration");
-    Serial.println("   set <key> <val> - Set configuration value");
+    Serial.println("   prefs <key> <val> - Set configuration value");
+    Serial.println("   metadata        - Show all metadata");
+    Serial.println("   meta <key> <val> - Set metadata value");
+    Serial.println("   resetmeta       - Reset metadata to defaults");
     Serial.println();
     
     delay(2000);  // Allow sensor to stabilize
@@ -188,8 +208,13 @@ void handleSerialCommands() {
         command.trim();
         
         // Check for time sync command first (case-sensitive for parsing)
-        if (command.startsWith("sync ")) {
-            String unixTimeStr = command.substring(5);
+        if (command.startsWith("timesync ") || command.startsWith("sync ")) {
+            String unixTimeStr;
+            if (command.startsWith("timesync ")) {
+                unixTimeStr = command.substring(9);  // Length of "timesync "
+            } else {
+                unixTimeStr = command.substring(5);  // Length of "sync "
+            }
             unixTimeStr.trim();
             uint32_t unixTime = unixTimeStr.toInt();
             
@@ -203,9 +228,144 @@ void handleSerialCommands() {
             return;
         }
         
-        // Check for set command before lowercasing
-        if (command.startsWith("set ")) {
-            String params = command.substring(4);
+        // Check for meta command before lowercasing
+        if (command.startsWith("meta ")) {
+            String params = command.substring(5);
+            params.trim();
+            int spacePos = params.indexOf(' ');
+            
+            if (spacePos > 0) {
+                String key = params.substring(0, spacePos);
+                String value = params.substring(spacePos + 1);
+                key.trim();
+                value.trim();
+                
+                // Check if this metadata change affects CSV structure
+                if (airQualitySensor.shouldClearLogForMetadata(key) && LittleFS.exists("/sensor_log.csv")) {
+                    String oldValue = airQualitySensor.getMetadata(key);
+                    
+                    // Prompt if changing existing value or setting for first time when log exists
+                    if ((oldValue.length() > 0 && oldValue != value) || (oldValue.length() == 0)) {
+                        Serial.println("\n⚠ WARNING: Changing this metadata will affect CSV data columns!");
+                        Serial.println("   Current value: " + oldValue);
+                        Serial.println("   New value: " + value);
+                        Serial.println();
+                        Serial.println("Options:");
+                        Serial.println("  1. Type 'download' to save existing log first");
+                        Serial.println("  2. Type 'yes' to clear log and set new metadata");
+                        Serial.println("  3. Press Enter to cancel");
+                        Serial.print("\nYour choice: ");
+                        
+                        // Wait for response with timeout
+                        unsigned long timeout = millis() + 30000; // 30 second timeout
+                        String response = "";
+                        
+                        while (millis() < timeout) {
+                            if (Serial.available()) {
+                                response = Serial.readStringUntil('\n');
+                                response.trim();
+                                response.toLowerCase();
+                                break;
+                            }
+                            delay(100);
+                        }
+                        
+                        Serial.println();
+                        
+                        if (response == "download" || response == "dump") {
+                            Serial.println("📄 Outputting CSV data for download...");
+                            Serial.println("═══════════════════════════════════════════════════════════\n");
+                            // Trigger dump for Python CLI to capture and save
+                            dumpCSVFile();
+                            Serial.println("\n═══════════════════════════════════════════════════════════");
+                            Serial.println("✓ CSV output complete. Python CLI should have saved the file.");
+                            Serial.println("\nℹ You can now:");
+                            Serial.println("  - Run the meta command again and choose 'yes' to proceed");
+                            Serial.println("  - Or cancel and keep the existing log file\n");
+                            return;
+                        } else if (response == "yes") {
+                            airQualitySensor.setMetadata(key, value, true); // true = clear log
+                            Serial.println();
+                        } else {
+                            Serial.println("❌ Metadata change cancelled.\n");
+                            return;
+                        }
+                    } else if (oldValue.length() == 0) {
+                        // First time setting this field - just warn
+                        airQualitySensor.setMetadata(key, value);
+                        Serial.println();
+                    } else {
+                        // Same value, no change needed
+                        Serial.println("ℹ Metadata unchanged (same value).\n");
+                        return;
+                    }
+                } else {
+                    // Non-dynamic metadata or no existing log file
+                    airQualitySensor.setMetadata(key, value);
+                    Serial.println();
+                }
+            } else {
+                Serial.println("❌ ERROR: Invalid format\n");
+                Serial.println("Usage: meta <key> <value>\n");
+                Serial.println("Examples:");
+                Serial.println("  meta user John_Doe");
+                Serial.println("  meta project Lab_Study_2025");
+                Serial.println("  meta location Building_A_Room_203\n");
+            }
+            return;
+        }
+        
+        // Check for resetmeta command
+        if (command == "resetmeta") {
+            Serial.println("\n⚠ WARNING: This will reset all metadata to default state!");
+            Serial.println("   - Keeps: device_name, firmware_version, session_start");
+            Serial.println("   - Resets: user, project, location (empty values)");
+            Serial.println("   - Deletes: All other custom metadata");
+            Serial.println("   - Clears: CSV log file");
+            Serial.println();
+            Serial.print("Type 'yes' to confirm: ");
+            
+            // Wait for response with timeout
+            unsigned long timeout = millis() + 15000; // 15 second timeout
+            String response = "";
+            
+            while (millis() < timeout) {
+                if (Serial.available()) {
+                    response = Serial.readStringUntil('\n');
+                    response.trim();
+                    response.toLowerCase();
+                    break;
+                }
+                delay(100);
+            }
+            
+            Serial.println();
+            
+            if (response == "yes") {
+                // Clear log file first
+                if (LittleFS.exists("/sensor_log.csv")) {
+                    if (LittleFS.remove("/sensor_log.csv")) {
+                        Serial.println("✓ Log file cleared");
+                    } else {
+                        Serial.println("❌ ERROR: Failed to clear log file");
+                    }
+                }
+                
+                // Reset metadata
+                if (airQualitySensor.resetMetadata()) {
+                    Serial.println("✓ Metadata reset to defaults\n");
+                } else {
+                    Serial.println("❌ ERROR: Failed to reset metadata\n");
+                }
+            } else {
+                Serial.println("❌ Metadata reset cancelled.\n");
+            }
+            return;
+        }
+        
+        // Check for prefs command before lowercasing (also accept 'set' for compatibility)
+        if (command.startsWith("prefs ") || command.startsWith("set ")) {
+            String params = command.substring(command.indexOf(' ') + 1);
             params.trim();
             int spacePos = params.indexOf(' ');
             
@@ -221,13 +381,18 @@ void handleSerialCommands() {
                 } else if (key == "logging" || key == "log") {
                     airQualitySensor.setLoggingInterval(value);
                     airQualitySensor.saveConfig();
+                } else if (key == "utc" || key == "timezone" || key == "offset") {
+                    int16_t offset = valueStr.toInt();
+                    airQualitySensor.setUtcOffset(offset);
+                    airQualitySensor.saveConfig();
                 } else {
                     Serial.printf("❌ Unknown setting: %s\n", key.c_str());
-                    Serial.println("Available settings: measurement, logging\n");
+                    Serial.println("Available settings: measurement, logging, utc\n");
                 }
             } else {
                 Serial.println("❌ ERROR: Invalid format\n");
-                Serial.println("Usage: set <measurement|logging> <seconds>\n");
+                Serial.println("Usage: prefs <measurement|logging> <seconds>\n");
+                Serial.println("       prefs utc <offset_hours>  (e.g., prefs utc -5 for EST)\n");
             }
             return;
         }
@@ -241,9 +406,32 @@ void handleSerialCommands() {
         } else if (command == "list" || command == "ls") {
             listFiles();
         } else if (command == "clear" || command == "c") {
-            Serial.println("\n⚠ Clearing CSV log file...");
-            LittleFS.remove("/sensor_log.csv");
-            Serial.println("✓ Log file cleared!\n");
+            Serial.println("\n⚠ WARNING: This will permanently delete the log file!");
+            Serial.print("Type 'yes' to confirm deletion: ");
+            
+            // Wait for response with timeout
+            unsigned long timeout = millis() + 15000; // 15 second timeout
+            String response = "";
+            
+            while (millis() < timeout) {
+                if (Serial.available()) {
+                    response = Serial.readStringUntil('\n');
+                    response.trim();
+                    response.toLowerCase();
+                    break;
+                }
+                delay(100);
+            }
+            
+            Serial.println();
+            
+            if (response == "yes") {
+                Serial.println("⚠ Clearing CSV log file...");
+                LittleFS.remove("/sensor_log.csv");
+                Serial.println("✓ Log file cleared!\n");
+            } else {
+                Serial.println("❌ Clear operation cancelled.\n");
+            }
         } else if (command == "config" || command == "cfg") {
             SensorConfig config = airQualitySensor.getConfig();
             Serial.println("\n📋 Current Configuration:");
@@ -252,8 +440,12 @@ void handleSerialCommands() {
             Serial.println("  ─────────────────────────  ────────────  ─────────────");
             Serial.printf("  Measurement Interval       measurement   %d seconds\n", config.measurementInterval);
             Serial.printf("  Logging Interval           logging       %d seconds\n", config.loggingInterval);
+            Serial.printf("  UTC Offset                 utc           %+d hours\n", config.utcOffset);
             Serial.printf("  Sampling Interval (TWA)    (read-only)   %d seconds\n", config.samplingInterval);
-            Serial.println("═══════════════════════════════════════════════════════════\n");
+            Serial.println("═══════════════════════════════════════════════════════════");
+            Serial.println("\n💡 Tip: Use 'prefs <key> <value>' to change configuration settings");
+        } else if (command == "metadata" || command == "meta") {
+            showMetadata();
         } else if (command.length() > 0) {
             Serial.println("\n❌ Unknown command. Type 'help' for available commands.\n");
         }
@@ -268,10 +460,14 @@ void showHelp() {
     Serial.println("║ dump, d                 - Display CSV file contents         ║");
     Serial.println("║ list, ls                - List all files in filesystem      ║");
     Serial.println("║ clear, c                - Clear the CSV log file            ║");
-    Serial.println("║ sync <unix_time>        - Synchronize system time           ║");
+    Serial.println("║ timesync <unix_time>    - Synchronize system time           ║");
     Serial.println("║ config, cfg             - Show current configuration        ║");
-    Serial.println("║ set <key> <value>       - Set configuration value           ║");
-    Serial.println("║   Keys: measurement, logging (intervals in seconds)         ║");
+    Serial.println("║ prefs <key> <value>     - Set configuration value           ║");
+    Serial.println("║   Keys: measurement, logging (seconds), utc (offset hours)   ║");
+    Serial.println("║ metadata, meta          - Show all metadata                 ║");
+    Serial.println("║ meta <key> <value>      - Set metadata value                ║");
+    Serial.println("║   Common: user, project, location                           ║");
+    Serial.println("║ resetmeta               - Reset all metadata to defaults    ║");
     Serial.println("╚═════════════════════════════════════════════════════════════╝\n");
 }
 
@@ -297,15 +493,25 @@ void dumpCSVFile() {
     
     // Read and display file contents
     int lineNum = 0;
+    int dataNum = 0;
+    bool headerSeen = false;
+    
     while (file.available()) {
         String line = file.readStringUntil('\n');
         lineNum++;
         
-        // Add line numbers for easier reading
-        if (lineNum == 1) {
+        // Determine line type
+        if (line.startsWith("#")) {
+            // Comment line
+            Serial.print("[COMMENT] ");
+        } else if (!headerSeen && line.indexOf(',') >= 0) {
+            // First non-comment line with commas is the header
             Serial.print("[HEADER] ");
+            headerSeen = true;
         } else {
-            Serial.printf("[%4d] ", lineNum - 1);
+            // Data lines
+            dataNum++;
+            Serial.printf("[%4d] ", dataNum);
         }
         Serial.println(line);
     }
@@ -355,4 +561,67 @@ void listFiles() {
     Serial.printf("Filesystem: %zu bytes total, %zu bytes used (%.1f%%)\n", 
                   totalBytes, usedBytes, (usedBytes * 100.0) / totalBytes);
     Serial.println("═══════════════════════════════════════════════════════════\n");
+}
+
+void showMetadata() {
+    Serial.println("\n📝 Current Metadata:");
+    Serial.println("═══════════════════════════════════════════════════════════");
+    
+    std::vector<String> keys = airQualitySensor.getMetadataKeys();
+    
+    if (keys.empty()) {
+        Serial.println("  (no metadata set)");
+    } else {
+        Serial.println("  Key                    Value");
+        Serial.println("  ─────────────────────  ────────────────────────────────");
+        
+        // Show default metadata first
+        const char* defaultKeys[] = {"device_name", "firmware_version", "session_start"};
+        for (int i = 0; i < 3; i++) {
+            String key = defaultKeys[i];
+            String value = airQualitySensor.getMetadata(key);
+            if (value.length() > 0) {
+                Serial.printf("  %-20s  %s\n", key.c_str(), value.c_str());
+            }
+        }
+        
+        // Show dynamic metadata
+        const char* dynamicKeys[] = {"user", "project", "location"};
+        bool hasDynamic = false;
+        for (int i = 0; i < 3; i++) {
+            String key = dynamicKeys[i];
+            String value = airQualitySensor.getMetadata(key);
+            if (value.length() > 0) {
+                if (!hasDynamic) {
+                    Serial.println();
+                    hasDynamic = true;
+                }
+                Serial.printf("  %-20s  %s\n", key.c_str(), value.c_str());
+            }
+        }
+        
+        // Show any other custom metadata
+        bool hasOther = false;
+        for (const String& key : keys) {
+            bool isDefaultOrDynamic = false;
+            for (int i = 0; i < 3; i++) {
+                if (key == defaultKeys[i] || key == dynamicKeys[i]) {
+                    isDefaultOrDynamic = true;
+                    break;
+                }
+            }
+            if (!isDefaultOrDynamic) {
+                if (!hasOther) {
+                    Serial.println();
+                    hasOther = true;
+                }
+                String value = airQualitySensor.getMetadata(key);
+                Serial.printf("  %-20s  %s\n", key.c_str(), value.c_str());
+            }
+        }
+    }
+    
+    Serial.println("═══════════════════════════════════════════════════════════");
+    Serial.println("\n💡 Tip: Use 'meta <key> <value>' to set metadata");
+    Serial.println("   Example: meta user John_Doe\n");
 }

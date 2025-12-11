@@ -1,7 +1,23 @@
 #!/usr/bin/env python3
 """
+===============================================================================
 SEN66-Dosimetry CLI Tool
 A command-line interface for interacting with the SEN66 air quality monitor
+
+Project: SEN66-Dosimetry
+Creator: Christopher Lee
+License: GNU General Public License v3.0 (GPLv3)
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+===============================================================================
 
 Usage:
     python sen66_cli.py                               # Interactive console mode
@@ -10,6 +26,7 @@ Usage:
     python sen66_cli.py clear [--port COM5]
     python sen66_cli.py download [--port COM5] [--output data.csv]
     python sen66_cli.py sync [--port COM5]
+    python sen66_cli.py timezone --offset -5 [--port COM5]
     python sen66_cli.py monitor [--port COM5]
     python sen66_cli.py list-ports
 """
@@ -79,13 +96,23 @@ class SEN66CLI:
             
         return None
         
-    def send_command(self, command):
+    def flush_input_buffer(self):
+        """Flush any pending serial input to clear old measurements"""
+        if self.ser and self.ser.is_open:
+            self.ser.reset_input_buffer()
+            time.sleep(0.1)
+    
+    def send_command(self, command, flush_first=True):
         """Send a command to the board"""
         if not self.ser or not self.ser.is_open:
             print("Error: Not connected")
             return False
             
         try:
+            # Clear buffer of any pending measurements before sending command
+            if flush_first:
+                self.flush_input_buffer()
+            
             self.ser.write((command + '\n').encode())
             time.sleep(0.2)  # Give board time to process
             return True
@@ -149,30 +176,72 @@ class SEN66CLI:
                 
     def clear_log(self):
         """Clear the CSV log file"""
-        print("\nClearing log file...")
+        # Flush any pending data
+        self.flush_input_buffer()
         
         if self.send_command("clear"):
+            # Wait for the board's confirmation prompt
+            time.sleep(0.3)
+            
+            # Read and display the board's warning message
+            prompt_timeout = time.time() + 3
+            while time.time() < prompt_timeout:
+                if self.ser.in_waiting:
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                    if line:
+                        print(line)
+                        if "Type 'yes' to confirm" in line:
+                            break
+                else:
+                    time.sleep(0.1)
+            
+            # Get user confirmation
+            confirm = input().strip().lower()
+            
+            # Send confirmation to board
+            self.ser.write(f"{confirm}\n".encode())
+            self.ser.flush()
+            
+            # Read response
             time.sleep(0.5)
-            response = self.read_until_prompt(timeout=2)
-            for line in response:
-                print(line)
+            response_timeout = time.time() + 3
+            while time.time() < response_timeout:
+                if self.ser.in_waiting:
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                    if line:
+                        print(line)
+                        if "cleared" in line.lower() or "cancelled" in line.lower():
+                            break
+                else:
+                    time.sleep(0.1)
+                    if not self.ser.in_waiting:
+                        break
         else:
             print("Failed to send clear command")
     
-    def sync_time(self):
+    def timesync(self):
         """Synchronize the board's time with current Unix timestamp"""
         import time as time_module
         
         unix_time = int(time_module.time())
         print(f"\nSynchronizing board time to Unix timestamp: {unix_time}")
         
-        if self.send_command(f"sync {unix_time}"):
+        if self.send_command(f"timesync {unix_time}"):
             time.sleep(0.5)
-            response = self.read_until_prompt(timeout=2)
-            for line in response:
-                print(line)
+            
+            # Read just the sync response, not measurements
+            timeout = time.time() + 3
+            while time.time() < timeout:
+                if self.ser.in_waiting:
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                    if line:
+                        print(line)
+                        if "synchronized" in line.lower() or "error" in line.lower():
+                            break
+                else:
+                    time.sleep(0.1)
         else:
-            print("Failed to send sync command")
+            print("Failed to send timesync command")
     
     def show_config(self):
         """Show current board configuration"""
@@ -180,9 +249,36 @@ class SEN66CLI:
         
         if self.send_command("config"):
             time.sleep(0.5)
-            response = self.read_until_prompt(timeout=2)
-            for line in response:
-                print(line)
+            
+            # Read response, filtering out measurement data
+            timeout = time.time() + 3
+            in_config = False
+            
+            while time.time() < timeout:
+                if self.ser.in_waiting:
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                    if line:
+                        # Start capturing when we see the config header
+                        if "Current Configuration" in line or "═" in line:
+                            in_config = True
+                            print(line)
+                        # Stop if we see measurement indicators
+                        elif "Measurement #" in line or "ENVIRONMENTAL" in line:
+                            break
+                        # Print config lines
+                        elif in_config:
+                            print(line)
+                            # Stop after the final separator or tip
+                            if "Tip:" in line or ("═" in line and in_config and "Configuration" not in line):
+                                # Read one more line after tip
+                                time.sleep(0.1)
+                                if self.ser.in_waiting:
+                                    extra = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                                    if extra:
+                                        print(extra)
+                                break
+                else:
+                    time.sleep(0.1)
         else:
             print("Failed to send config command")
     
@@ -190,28 +286,99 @@ class SEN66CLI:
         """Set a configuration value"""
         print(f"\nSetting {key} to {value}...")
         
-        if self.send_command(f"set {key} {value}"):
+        if self.send_command(f"prefs {key} {value}"):
             time.sleep(0.5)
-            response = self.read_until_prompt(timeout=2)
-            for line in response:
-                print(line)
-        else:
-            print("Failed to send set command")
             
-    def download_log(self, output_file):
+            # Read response, filtering out measurement data
+            timeout = time.time() + 3
+            
+            while time.time() < timeout:
+                if self.ser.in_waiting:
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                    if line:
+                        # Print response lines but stop if we see measurements
+                        if "Measurement #" in line or "ENVIRONMENTAL" in line:
+                            break
+                        print(line)
+                        # Stop after confirmation messages
+                        if "interval set to" in line.lower() or "saved to NVS" in line:
+                            time.sleep(0.2)  # Brief pause
+                            break
+                else:
+                    time.sleep(0.1)
+        else:
+            print("Failed to send prefs command")
+    
+    def set_timezone(self, offset_str):
+        """Set UTC offset (timezone) with validation"""
+        try:
+            offset = int(offset_str)
+            if offset < -12 or offset > 14:
+                print(f"❌ Error: UTC offset must be between -12 and +14 hours (got {offset})")
+                print("   Common timezones:")
+                print("   -12: Baker Island Time")
+                print("    -8: PST (Pacific Standard Time)")
+                print("    -5: EST (Eastern Standard Time)")
+                print("     0: UTC/GMT")
+                print("    +1: CET (Central European Time)")
+                print("    +8: CST (China Standard Time)")
+                print("    +9: JST (Japan Standard Time)")
+                print("   +14: LINT (Line Islands Time)")
+                return False
+            
+            print(f"\n🌍 Setting UTC offset to {offset:+d} hours...")
+            
+            if self.send_command(f"prefs utc {offset}"):
+                time.sleep(0.5)
+                
+                # Read response, filtering out measurement data
+                timeout = time.time() + 3
+                
+                while time.time() < timeout:
+                    if self.ser.in_waiting:
+                        line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                        if line:
+                            # Print response lines but stop if we see measurements
+                            if "Measurement #" in line or "ENVIRONMENTAL" in line:
+                                break
+                            print(line)
+                            # Stop after confirmation messages
+                            if "utc offset set to" in line.lower() or "saved to NVS" in line:
+                                print(f"✓ Timezone set to UTC{offset:+d}")
+                                time.sleep(0.2)  # Brief pause
+                                break
+                    else:
+                        time.sleep(0.1)
+                return True
+            else:
+                print("Failed to send UTC offset command")
+                return False
+                
+        except ValueError:
+            print(f"❌ Error: Invalid offset '{offset_str}'. Must be an integer between -12 and +14")
+            print("   Examples: timezone -5  (EST), timezone +9  (JST)")
+            return False
+            
+    def download_log(self, output_file=None):
         """Download the CSV log file"""
+        # Add timestamp to filename if using default
+        if output_file is None or output_file == 'sensor_log.csv':
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = f"sensor_log_{timestamp}.csv"
+        
         print(f"\nDownloading log file to {output_file}...")
         
         if self.send_command("dump"):
             time.sleep(1.0)  # Give board more time to start sending
             
-            # Known CSV header from firmware
-            csv_header = "timestamp,temperature,humidity,vocIndex,noxIndex,pm1_0,pm2_5,pm4_0,pm10,co2,dewPoint,heatIndex,absoluteHumidity,twa_pm1_0,twa_pm2_5,twa_pm4_0,twa_pm10"
-            
             # Read the dump output
-            csv_lines = [csv_header]  # Start with header
+            csv_lines = []
+            comment_lines = []
             
             timeout = time.time() + 10
+            header_found = False
+            
             while time.time() < timeout:
                 if self.ser.in_waiting:
                     try:
@@ -222,34 +389,51 @@ class SEN66CLI:
                     except:
                         continue
                     
-                    # Look for lines that start with [ followed by numbers and ]
-                    # Format is like: [   1] or [ 123]
+                    # Look for lines that start with [ followed by content and ]
                     if line.startswith("[") and "]" in line:
                         # Extract the part after ]
                         bracket_end = line.index("]")
                         bracket_content = line[1:bracket_end].strip()
                         csv_content = line[bracket_end + 1:].strip()
                         
-                        # Only process if bracket contains a number (data lines, not HEADER)
-                        # and CSV content looks valid (has commas, no control characters)
-                        if bracket_content.isdigit() and "," in csv_content:
-                            # Check for control characters (except \r and \n which we've stripped)
-                            if not any(ord(c) < 32 for c in csv_content):
+                        # Capture comment lines
+                        if bracket_content == "COMMENT":
+                            comment_lines.append(csv_content)
+                        # Capture header line
+                        elif bracket_content == "HEADER" and "," in csv_content:
+                            # Skip obviously corrupted headers (lots of non-printable characters)
+                            non_printable_count = sum(1 for c in csv_content if ord(c) < 32 and c not in '\n\r\t')
+                            if not header_found and non_printable_count < len(csv_content) * 0.2:
+                                csv_lines.append(csv_content)
+                                header_found = True
+                        # Capture data lines (numbers only)
+                        elif bracket_content.isdigit() and "," in csv_content:
+                            # Skip lines with excessive non-printable characters
+                            non_printable_count = sum(1 for c in csv_content if ord(c) < 32 and c not in '\n\r\t')
+                            if non_printable_count < len(csv_content) * 0.2:
                                 csv_lines.append(csv_content)
                     elif "Displayed" in line and "lines" in line:
                         break
                 else:
                     time.sleep(0.1)
                     
-            if len(csv_lines) > 1:  # More than just the header
+            if len(csv_lines) > 0:
                 # Write to file with proper newlines
                 output_path = Path(output_file)
                 with open(output_path, 'w', encoding='utf-8', newline='') as f:
+                    # Write comment lines first
+                    if comment_lines:
+                        for comment in comment_lines:
+                            f.write(f'# {comment}\n')
+                        f.write('#\n')
+                    # Write CSV data
                     f.write('\n'.join(csv_lines))
                     f.write('\n')
                     
-                data_lines = len(csv_lines) - 1  # Subtract header
-                print(f"✓ Downloaded {data_lines} data rows ({len(csv_lines)} total lines) to {output_path}")
+                data_lines = len(csv_lines) - 1 if len(csv_lines) > 0 else 0  # Subtract header
+                print(f"✓ Downloaded {data_lines} data rows to {output_path}")
+                if comment_lines:
+                    print(f"  Including {len(comment_lines)} metadata comment lines")
                 print(f"  File size: {output_path.stat().st_size} bytes")
             else:
                 print("✗ No CSV data received. Log file may be empty or corrupted.")
@@ -268,6 +452,263 @@ class SEN66CLI:
                     time.sleep(0.1)
         except KeyboardInterrupt:
             print("\n\nMonitoring stopped.")
+    
+    def show_metadata(self):
+        """Show current board metadata"""
+        print("\nRetrieving metadata...")
+        
+        if self.send_command("metadata"):
+            time.sleep(0.5)
+            
+            # Read response, filtering out measurement data
+            timeout = time.time() + 3
+            in_metadata = False
+            
+            while time.time() < timeout:
+                if self.ser.in_waiting:
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                    if line:
+                        # Start capturing when we see the metadata header
+                        if "Current Metadata" in line or "═" in line:
+                            in_metadata = True
+                            print(line)
+                        # Stop if we see measurement indicators
+                        elif "Measurement #" in line or "ENVIRONMENTAL" in line:
+                            break
+                        # Print metadata lines
+                        elif in_metadata:
+                            print(line)
+                            # Stop after the final separator or tip
+                            if "Tip:" in line or ("═" in line and in_metadata):
+                                # Read one more line after tip
+                                time.sleep(0.1)
+                                if self.ser.in_waiting:
+                                    extra = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                                    if extra:
+                                        print(extra)
+                                break
+                else:
+                    time.sleep(0.1)
+        else:
+            print("Failed to send metadata command")
+    
+    def set_metadata(self, key, value, interactive=True):
+        """Set a metadata value with optional user confirmation for log clearing"""
+        print(f"\nSetting metadata: {key} = {value}...")
+        
+        if self.send_command(f"meta {key} {value}"):
+            time.sleep(0.5)
+            
+            # Read initial response
+            lines = []
+            timeout = time.time() + 5
+            waiting_for_input = False
+            
+            while time.time() < timeout:
+                if self.ser.in_waiting:
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                    if line:
+                        print(line)
+                        lines.append(line)
+                        
+                        # Check if board is waiting for user input
+                        if "Your choice:" in line or "choice:" in line.lower():
+                            waiting_for_input = True
+                            break
+                        
+                        # Check if operation completed
+                        if "Metadata set:" in line or "cancelled" in line.lower() or "unchanged" in line.lower():
+                            return
+                else:
+                    time.sleep(0.1)
+            
+            # If board is waiting for input, handle the interaction
+            if waiting_for_input and interactive:
+                choice = input().strip().lower()
+                self.ser.write(f"{choice}\n".encode())
+                
+                # If user chose to download/dump, capture and save the CSV
+                if choice == "download" or choice == "dump":
+                    print("\n📥 Downloading CSV file before metadata change...")
+                    time.sleep(1.5)  # Give board more time to start dumping
+                    
+                    # Generate timestamped filename
+                    import datetime
+                    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    backup_filename = f"sensor_log_backup_{timestamp}.csv"
+                    
+                    # Capture CSV output using identical logic to download_log()
+                    csv_lines = []
+                    comment_lines = []
+                    
+                    dump_timeout = time.time() + 15
+                    header_found = False
+                    
+                    while time.time() < dump_timeout:
+                        if self.ser.in_waiting:
+                            try:
+                                # Read raw bytes first
+                                raw_line = self.ser.readline()
+                                # Decode to string, replacing any problematic characters
+                                line = raw_line.decode('utf-8', errors='replace').strip()
+                            except:
+                                continue
+                            
+                            if line:
+                                print(line)
+                                
+                                # Look for lines that start with [ followed by content and ]
+                                if line.startswith("[") and "]" in line:
+                                    # Extract the part after ]
+                                    bracket_end = line.index("]")
+                                    bracket_content = line[1:bracket_end].strip()
+                                    csv_content = line[bracket_end + 1:].strip()
+                                    
+                                    # Capture comment lines
+                                    if bracket_content == "COMMENT":
+                                        comment_lines.append(csv_content)
+                                    # Capture header line
+                                    elif bracket_content == "HEADER" and "," in csv_content:
+                                        # Skip obviously corrupted headers (lots of non-printable characters)
+                                        non_printable_count = sum(1 for c in csv_content if ord(c) < 32 and c not in '\n\r\t')
+                                        if not header_found and non_printable_count < len(csv_content) * 0.2:
+                                            csv_lines.append(csv_content)
+                                            header_found = True
+                                    # Capture data lines (numbers only)
+                                    elif bracket_content.isdigit() and "," in csv_content:
+                                        # Skip lines with excessive non-printable characters
+                                        non_printable_count = sum(1 for c in csv_content if ord(c) < 32 and c not in '\n\r\t')
+                                        if non_printable_count < len(csv_content) * 0.2:
+                                            csv_lines.append(csv_content)
+                                elif "Displayed" in line and "lines" in line:
+                                    break
+                                
+                                # Stop when we see the info message after output
+                                if "CSV output complete" in line or "You can now set metadata safely." in line:
+                                    break
+                        else:
+                            time.sleep(0.1)
+                    
+                    # Save the CSV file using identical format to download_log()
+                    if csv_lines:
+                        output_path = Path(backup_filename)
+                        with open(output_path, 'w', encoding='utf-8', newline='') as f:
+                            # Write comment lines first
+                            if comment_lines:
+                                for comment in comment_lines:
+                                    f.write(f'# {comment}\n')
+                                f.write('#\n')
+                            # Write CSV data
+                            f.write('\n'.join(csv_lines))
+                            f.write('\n')
+                        
+                        data_lines = len(csv_lines) - 1 if len(csv_lines) > 0 else 0  # Subtract header
+                        print(f"\n✅ CSV file saved to: {backup_filename}")
+                        print(f"   {data_lines} data rows saved")
+                        if comment_lines:
+                            print(f"   Including {len(comment_lines)} metadata comment lines")
+                        print(f"   File size: {output_path.stat().st_size} bytes\n")
+                    else:
+                        print("\n⚠ Warning: No CSV data captured (file may be empty)\n")
+                    
+                    # Continue reading until operation completes
+                    final_timeout = time.time() + 5
+                    while time.time() < final_timeout:
+                        if self.ser.in_waiting:
+                            line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                            if line:
+                                print(line)
+                                if "can now:" in line.lower() or "cancelled" in line.lower():
+                                    break
+                        else:
+                            time.sleep(0.1)
+                            if not self.ser.in_waiting:
+                                break
+                else:
+                    # For "yes" or other responses, just read the outcome
+                    time.sleep(1.0)
+                    response_timeout = time.time() + 10
+                    while time.time() < response_timeout:
+                        if self.ser.in_waiting:
+                            line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                            if line:
+                                print(line)
+                                if "Metadata set:" in line or "cancelled" in line.lower():
+                                    break
+                        else:
+                            time.sleep(0.1)
+                            if not self.ser.in_waiting:
+                                break
+        else:
+            print("Failed to send meta command")
+    
+    def show_about(self):
+        """Display project information and license"""
+        print("\n" + "="*80)
+        print("  SEN66-Dosimetry Project Information")
+        print("="*80)
+        print("\nProject: SEN66-Dosimetry")
+        print("Creator: Christopher Lee")
+        print("License: GNU General Public License v3.0 (GPLv3)")
+        print("\nDescription:")
+        print("  Advanced air quality monitoring system with the Sensirion SEN66 sensor")
+        print("  Features real-time measurements, 8-hour TWA calculations, CSV logging,")
+        print("  and localized timestamps with configurable UTC offset.")
+        print("\nLicense Notice:")
+        print("  This program is free software: you can redistribute it and/or modify")
+        print("  it under the terms of the GNU General Public License as published by")
+        print("  the Free Software Foundation, either version 3 of the License, or")
+        print("  (at your option) any later version.")
+        print("\n  This program is distributed in the hope that it will be useful,")
+        print("  but WITHOUT ANY WARRANTY; without even the implied warranty of")
+        print("  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the")
+        print("  GNU General Public License for more details.")
+        print("\n" + "="*80 + "\n")
+    
+    def reset_metadata(self):
+        """Reset all metadata to default state"""
+        print("\n⚠ WARNING: This will reset all metadata to default state!")
+        print("   - Keeps: device_name, firmware_version, session_start")
+        print("   - Resets: user, project, location (empty values)")
+        print("   - Deletes: All other custom metadata")
+        print("   - Clears: CSV log file")
+        print()
+        
+        confirm = input("Type 'yes' to confirm: ").strip().lower()
+        
+        if confirm != 'yes':
+            print("❌ Metadata reset cancelled.\n")
+            return False
+        
+        # Flush any pending data
+        self.flush_input_buffer()
+        
+        if self.send_command("resetmeta"):
+            # Wait for the board to process
+            time.sleep(0.5)
+            
+            # Send 'yes' confirmation to the board
+            self.ser.write(b'yes\n')
+            self.ser.flush()
+            
+            # Read response
+            time.sleep(1.0)
+            response_timeout = time.time() + 5
+            while time.time() < response_timeout:
+                if self.ser.in_waiting:
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                    if line:
+                        print(line)
+                        if "reset to defaults" in line.lower() or "cancelled" in line.lower():
+                            break
+                else:
+                    time.sleep(0.1)
+                    if not self.ser.in_waiting:
+                        break
+            return True
+        else:
+            print("Failed to send resetmeta command")
+            return False
 
 
 def list_ports():
@@ -297,11 +738,16 @@ def interactive_mode(port=None, baudrate=115200):
     print("  status              - Show current measurement")
     print("  clear               - Clear log file")
     print("  download [file]     - Download log (default: sensor_log.csv)")
-    print("  sync                - Synchronize time with PC")
+    print("  timesync            - Synchronize time with PC")
     print("  config              - Show current configuration")
-    print("  set <key> <value>   - Set config (measurement, logging)")
+    print("  prefs <key> <value> - Set config (measurement, logging, utc)")
+    print("  timezone <offset>   - Set UTC offset hours (-12 to +14)")
+    print("  metadata            - Show all metadata")
+    print("  meta <key> <value>  - Set metadata (user, project, location)")
+    print("  resetmeta           - Reset all metadata to defaults")
     print("  monitor             - Monitor live data (Ctrl+C to stop)")
     print("  list-ports          - List available serial ports")
+    print("  about               - Show project information and license")
     print("  help                - Show this help")
     print("  exit, quit          - Exit console")
     print()
@@ -312,6 +758,10 @@ def interactive_mode(port=None, baudrate=115200):
     
     while True:
         try:
+            # Flush any pending serial data before prompting user
+            if connected and cli.ser and cli.ser.is_open:
+                cli.flush_input_buffer()
+            
             # Get command
             cmd_input = input("sen66> ").strip()
             
@@ -333,11 +783,16 @@ def interactive_mode(port=None, baudrate=115200):
                 print("  status              - Show current measurement")
                 print("  clear               - Clear log file")
                 print("  download [file]     - Download log (default: sensor_log.csv)")
-                print("  sync                - Synchronize time with PC")
+                print("  timesync            - Synchronize time with PC")
                 print("  config              - Show current configuration")
-                print("  set <key> <value>   - Set config (measurement, logging)")
+                print("  prefs <key> <value> - Set config (measurement, logging, utc)")
+                print("  timezone <offset>   - Set UTC offset hours (-12 to +14)")
+                print("  metadata            - Show all metadata")
+                print("  meta <key> <value>  - Set metadata (user, project, location)")
+                print("  resetmeta           - Reset all metadata to defaults")
                 print("  monitor             - Monitor live data (Ctrl+C to stop)")
                 print("  list-ports          - List available serial ports")
+                print("  about               - Show project information and license")
                 print("  help                - Show this help")
                 print("  exit, quit          - Exit console")
                 continue
@@ -362,16 +817,36 @@ def interactive_mode(port=None, baudrate=115200):
             elif cmd == 'download':
                 output_file = args[0] if args else 'sensor_log.csv'
                 cli.download_log(output_file)
-            elif cmd == 'sync':
-                cli.sync_time()
+            elif cmd == 'timesync' or cmd == 'sync':
+                cli.timesync()
             elif cmd == 'config':
                 cli.show_config()
-            elif cmd == 'set':
+            elif cmd == 'prefs' or cmd == 'set':  # Accept both for compatibility
                 if len(args) >= 2:
                     cli.set_config(args[0], args[1])
                 else:
-                    print("Usage: set <key> <value>")
-                    print("Keys: measurement, logging")
+                    print("Usage: prefs <key> <value>")
+                    print("Keys: measurement, logging, utc")
+                    print("Example: prefs utc -5  (for EST timezone)")
+            elif cmd == 'timezone' or cmd == 'utc':
+                if len(args) >= 1:
+                    cli.set_timezone(args[0])
+                else:
+                    print("Usage: timezone <offset>")
+                    print("Set UTC offset in hours (-12 to +14)")
+                    print("Examples: timezone -5  (EST), timezone +9  (JST)")
+            elif cmd == 'metadata':
+                cli.show_metadata()
+            elif cmd == 'meta':
+                if len(args) >= 2:
+                    cli.set_metadata(args[0], ' '.join(args[1:]))  # Join in case value has spaces
+                else:
+                    print("Usage: meta <key> <value>")
+                    print("Common keys: user, project, location")
+            elif cmd == 'resetmeta':
+                cli.reset_metadata()
+            elif cmd == 'about':
+                cli.show_about()
             elif cmd == 'monitor':
                 print("\nPress Ctrl+C to stop monitoring...\n")
                 cli.monitor()
@@ -381,11 +856,16 @@ def interactive_mode(port=None, baudrate=115200):
                 print("  status              - Show current measurement")
                 print("  clear               - Clear log file")
                 print("  download [file]     - Download log (default: sensor_log.csv)")
-                print("  sync                - Synchronize time with PC")
+                print("  timesync            - Synchronize time with PC")
                 print("  config              - Show current configuration")
-                print("  set <key> <value>   - Set config (measurement, logging)")
+                print("  prefs <key> <value> - Set config (measurement, logging, utc)")
+                print("  timezone <offset>   - Set UTC offset hours (-12 to +14)")
+                print("  metadata            - Show all metadata")
+                print("  meta <key> <value>  - Set metadata (user, project, location)")
+                print("  resetmeta           - Reset all metadata to defaults")
                 print("  monitor             - Monitor live data (Ctrl+C to stop)")
                 print("  list-ports          - List available serial ports")
+                print("  about               - Show project information and license")
                 print("  help                - Show this help")
                 print("  exit, quit          - Exit console")
                 
@@ -414,6 +894,8 @@ Examples:
   %(prog)s clear                           # Clear log file
   %(prog)s download --output data.csv      # Download log file
   %(prog)s sync                            # Sync time with PC
+  %(prog)s timezone --offset -5            # Set timezone to UTC-5 (EST)
+  %(prog)s timezone --offset +9 --port COM5 # Set timezone to UTC+9 (JST)
   %(prog)s monitor                         # Monitor live data
   %(prog)s list-ports                      # List available ports
   %(prog)s console --port COM5             # Start interactive console
@@ -422,7 +904,7 @@ Examples:
     
     parser.add_argument('command', 
                        nargs='?',
-                       choices=['status', 'clear', 'download', 'monitor', 'sync', 'config', 'set', 'list-ports', 'console'],
+                       choices=['status', 'clear', 'download', 'monitor', 'sync', 'config', 'set', 'metadata', 'meta', 'timezone', 'utc', 'about', 'list-ports', 'console'],
                        help='Command to execute (omit for interactive mode)')
     parser.add_argument('--port', '-p',
                        help='Serial port (e.g., COM5, /dev/ttyUSB0)')
@@ -430,10 +912,12 @@ Examples:
                        default='sensor_log.csv',
                        help='Output file for download command (default: sensor_log.csv)')
     parser.add_argument('--key', '-k',
-                       help='Config key for set command (measurement, logging)')
+                       help='Key for set/meta commands (config: measurement, logging, utc; meta: user, project, location)')
     parser.add_argument('--value', '-v',
+                       help='Value for set/meta commands')
+    parser.add_argument('--offset',
                        type=int,
-                       help='Config value for set command (seconds)')
+                       help='UTC offset in hours (-12 to +14) for timezone command')
     parser.add_argument('--baudrate', '-b',
                        type=int,
                        default=115200,
@@ -469,17 +953,35 @@ Examples:
             cli.clear_log()
         elif args.command == 'download':
             cli.download_log(args.output)
-        elif args.command == 'sync':
-            cli.sync_time()
+        elif args.command == 'timesync' or args.command == 'sync':
+            cli.timesync()
         elif args.command == 'config':
             cli.show_config()
         elif args.command == 'set':
             if args.key and args.value is not None:
-                cli.set_config(args.key, args.value)
+                cli.set_config(args.key, int(args.value))
             else:
                 print("Error: set command requires --key and --value")
                 print("Example: python sen66_cli.py set --key measurement --value 30")
                 return 1
+        elif args.command == 'metadata':
+            cli.show_metadata()
+        elif args.command == 'meta':
+            if args.key and args.value is not None:
+                cli.set_metadata(args.key, args.value)
+            else:
+                print("Error: meta command requires --key and --value")
+                print("Example: python sen66_cli.py meta --key user --value John_Doe")
+                return 1
+        elif args.command == 'timezone' or args.command == 'utc':
+            if args.offset is not None:
+                cli.set_timezone(str(args.offset))
+            else:
+                print("Error: timezone command requires --offset")
+                print("Example: python sen66_cli.py timezone --offset -5")
+                return 1
+        elif args.command == 'about':
+            cli.show_about()
         elif args.command == 'monitor':
             cli.monitor()
         else:
@@ -488,10 +990,14 @@ Examples:
             print("  status              - Show current measurement")
             print("  clear               - Clear log file")
             print("  download            - Download CSV log file")
-            print("  sync                - Synchronize time with PC")
+            print("  timesync            - Synchronize time with PC")
             print("  config              - Show current configuration")
             print("  set                 - Set configuration value")
+            print("  timezone            - Set UTC offset (timezone)")
+            print("  metadata            - Show all metadata")
+            print("  meta                - Set metadata value")
             print("  monitor             - Monitor live data")
+            print("  about               - Show project information and license")
             print("  list-ports          - List available serial ports")
             print("  console             - Start interactive console")
             print("\nUse --help for detailed usage information")

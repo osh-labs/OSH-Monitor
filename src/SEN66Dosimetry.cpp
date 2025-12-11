@@ -1,9 +1,23 @@
 /**
+ * ===============================================================================
  * SEN66Dosimetry.cpp
  * 
  * Implementation of SEN66 air quality sensor library with dosimetry and logging
  * 
- * MIT License
+ * Project: SEN66-Dosimetry
+ * Creator: Christopher Lee
+ * License: GNU General Public License v3.0 (GPLv3)
+ * 
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ * ===============================================================================
  */
 
 #include "SEN66Dosimetry.h"
@@ -44,6 +58,9 @@ bool SEN66Dosimetry::begin(int sdaPin, int sclPin, uint32_t i2cFreq) {
     
     // Load configuration from NVS
     loadConfig();
+    
+    // Load metadata from NVS
+    loadMetadata();
     
     // Initialize TWA buffers
     initializeTWABuffers();
@@ -267,8 +284,27 @@ bool SEN66Dosimetry::ensureLogFileExists() {
             return false;
         }
         
-        // Write CSV header
-        file.println("timestamp,temperature,humidity,vocIndex,noxIndex,pm1_0,pm2_5,pm4_0,pm10,co2,dewPoint,heatIndex,absoluteHumidity,twa_pm1_0,twa_pm2_5,twa_pm4_0,twa_pm10");
+        // Write metadata as header comments (system metadata only)
+        file.println("# SEN66 Air Quality Data Log");
+        file.println("# Device: " + getMetadata("device_name", "Unknown"));
+        file.println("# Firmware Version: " + getMetadata("firmware_version", "Unknown"));
+        file.println("# Session Start: " + getMetadata("session_start", "Not Set"));
+        file.println("#");
+        
+        // Build dynamic CSV header with ALL non-system metadata as columns
+        String header = "timestamp,local_time";
+        
+        // Add all metadata fields as columns (except system fields)
+        for (const auto &pair : _metadata) {
+            if (pair.first != "device_name" && pair.first != "firmware_version" && pair.first != "session_start") {
+                header += "," + pair.first;
+            }
+        }
+        
+        // Add sensor data columns
+        header += ",temperature,humidity,vocIndex,noxIndex,pm1_0,pm2_5,pm4_0,pm10,co2,dewPoint,heatIndex,absoluteHumidity,twa_pm1_0,twa_pm2_5,twa_pm4_0,twa_pm10";
+        
+        file.println(header);
         file.close();
     }
     
@@ -277,8 +313,18 @@ bool SEN66Dosimetry::ensureLogFileExists() {
 
 String SEN66Dosimetry::sensorDataToCSV(const SensorData &data) {
     String line = "";
-    line += String(data.timestamp) + ",";
-    line += String(data.temperature, 2) + ",";
+    line += String(data.timestamp);
+    line += "," + formatLocalTime(data.timestamp);
+    
+    // Add ALL metadata values as columns (in same order as header, excluding system fields)
+    for (const auto &pair : _metadata) {
+        if (pair.first != "device_name" && pair.first != "firmware_version" && pair.first != "session_start") {
+            line += "," + pair.second;
+        }
+    }
+    
+    // Add sensor data
+    line += "," + String(data.temperature, 2) + ",";
     line += String(data.humidity, 2) + ",";
     line += String(data.vocIndex, 1) + ",";
     line += String(data.noxIndex, 1) + ",";
@@ -372,6 +418,10 @@ void SEN66Dosimetry::setUnixTime(uint32_t unixTime) {
     _syncMillis = millis();
     _timeSynced = true;
     
+    // Always update session_start to current sync time
+    _metadata["session_start"] = String(unixTime);
+    saveMetadata();
+    
     Serial.printf("Time synchronized: Unix time = %lu\n", unixTime);
 }
 
@@ -395,6 +445,7 @@ void SEN66Dosimetry::loadConfig() {
     _config.measurementInterval = _preferences.getUShort("measInterval", DEFAULT_MEASUREMENT_INTERVAL);
     _config.loggingInterval = _preferences.getUShort("logInterval", DEFAULT_LOGGING_INTERVAL);
     _config.samplingInterval = _preferences.getUShort("sampInterval", _samplingInterval);
+    _config.utcOffset = _preferences.getShort("utcOffset", 0);
     
     _preferences.end();
     
@@ -402,6 +453,7 @@ void SEN66Dosimetry::loadConfig() {
     Serial.printf("  Measurement Interval: %d seconds\n", _config.measurementInterval);
     Serial.printf("  Logging Interval: %d seconds\n", _config.loggingInterval);
     Serial.printf("  Sampling Interval: %d seconds\n", _config.samplingInterval);
+    Serial.printf("  UTC Offset: %+d hours\n", _config.utcOffset);
 }
 
 void SEN66Dosimetry::saveConfig() {
@@ -410,6 +462,7 @@ void SEN66Dosimetry::saveConfig() {
     _preferences.putUShort("measInterval", _config.measurementInterval);
     _preferences.putUShort("logInterval", _config.loggingInterval);
     _preferences.putUShort("sampInterval", _config.samplingInterval);
+    _preferences.putShort("utcOffset", _config.utcOffset);
     
     _preferences.end();
     
@@ -437,5 +490,242 @@ uint16_t SEN66Dosimetry::getMeasurementInterval() const {
 
 uint16_t SEN66Dosimetry::getLoggingInterval() const {
     return _config.loggingInterval;
+}
+
+void SEN66Dosimetry::setUtcOffset(int16_t offset) {
+    // Clamp to reasonable UTC offset range (-12 to +14 hours)
+    if (offset < -12) offset = -12;
+    if (offset > 14) offset = 14;
+    
+    _config.utcOffset = offset;
+    Serial.printf("UTC offset set to %+d hours\n", offset);
+}
+
+int16_t SEN66Dosimetry::getUtcOffset() const {
+    return _config.utcOffset;
+}
+
+String SEN66Dosimetry::formatLocalTime(uint32_t unixTime) const {
+    // Apply UTC offset (convert hours to seconds)
+    int32_t localTime = unixTime + (_config.utcOffset * 3600);
+    
+    // Convert to date/time components
+    // Note: This is a simplified calculation for demonstration
+    // For production use, consider a proper time library
+    
+    int32_t days = localTime / 86400;  // 86400 seconds per day
+    int32_t seconds = localTime % 86400;
+    
+    int32_t hours = seconds / 3600;
+    seconds %= 3600;
+    int32_t minutes = seconds / 60;
+    seconds %= 60;
+    
+    // Calculate date (simplified - assumes Unix epoch start)
+    // This is a basic calculation; real implementation would handle leap years properly
+    int32_t year = 1970;
+    int32_t daysInYear = 365;
+    
+    while (days >= daysInYear) {
+        days -= daysInYear;
+        year++;
+        // Simplified leap year check
+        daysInYear = ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)) ? 366 : 365;
+    }
+    
+    // Month calculation (simplified)
+    int32_t month = 1;
+    int32_t daysInMonth[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    
+    // Adjust February for leap years
+    if ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)) {
+        daysInMonth[1] = 29;
+    }
+    
+    while (days >= daysInMonth[month - 1]) {
+        days -= daysInMonth[month - 1];
+        month++;
+        if (month > 12) {
+            month = 1;
+            year++;
+        }
+    }
+    
+    int32_t day = days + 1;  // Convert from 0-based to 1-based
+    
+    // Format as yyyy-mm-dd_hh:mm:ss
+    char buffer[20];
+snprintf(buffer, sizeof(buffer), "%04ld-%02ld-%02ld_%02ld:%02ld:%02ld",
+             year, month, day, hours, minutes, seconds);
+    
+    return String(buffer);
+}
+
+// ==================== Metadata Management ====================
+
+void SEN66Dosimetry::loadMetadata() {
+    _preferences.begin("sen66-meta", true);  // Read-only
+    
+    // Load all stored metadata keys
+    // ESP32 Preferences doesn't have a way to list all keys, so we'll try common ones
+    // and store them in a separate list key
+    String keysList = _preferences.getString("_keys", "");
+    
+    if (keysList.length() > 0) {
+        int start = 0;
+        int end = keysList.indexOf(',');
+        
+        while (end >= 0) {
+            String key = keysList.substring(start, end);
+            String value = _preferences.getString(key.c_str(), "");
+            if (value.length() > 0) {
+                _metadata[key] = value;
+            }
+            start = end + 1;
+            end = keysList.indexOf(',', start);
+        }
+        
+        // Get last key (no trailing comma)
+        if (start < keysList.length()) {
+            String key = keysList.substring(start);
+            String value = _preferences.getString(key.c_str(), "");
+            if (value.length() > 0) {
+                _metadata[key] = value;
+            }
+        }
+    }
+    
+    _preferences.end();
+    
+    // Set default metadata if not present
+    if (_metadata.find("device_name") == _metadata.end()) {
+        uint8_t mac[6];
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
+        char macStr[18];
+        snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        _metadata["device_name"] = "SEN66-" + String(macStr).substring(9); // Last 3 octets
+    }
+    
+    if (_metadata.find("firmware_version") == _metadata.end()) {
+        _metadata["firmware_version"] = "1.0.0";
+    }
+    
+    if (_metadata.find("session_start") == _metadata.end() || _metadata["session_start"].length() == 0) {
+        if (_timeSynced) {
+            _metadata["session_start"] = String(getUnixTime());
+        } else {
+            _metadata["session_start"] = "NOT_SYNCED";
+        }
+        saveMetadata();  // Save session start immediately
+    }
+    
+    Serial.println("Metadata loaded from NVS");
+}
+
+void SEN66Dosimetry::saveMetadata() {
+    _preferences.begin("sen66-meta", false);  // Read-write
+    
+    // Build keys list
+    String keysList = "";
+    for (const auto &pair : _metadata) {
+        if (keysList.length() > 0) keysList += ",";
+        keysList += pair.first;
+        
+        // Save each key-value pair
+        _preferences.putString(pair.first.c_str(), pair.second.c_str());
+    }
+    
+    // Save the keys list
+    _preferences.putString("_keys", keysList.c_str());
+    
+    _preferences.end();
+    
+    Serial.println("Metadata saved to NVS");
+}
+
+bool SEN66Dosimetry::shouldClearLogForMetadata(const String &key) const {
+    // Only firmware_version and session_start are true system fields that shouldn't prompt
+    // device_name should prompt since users expect confirmation when changing device identity
+    return !(key == "firmware_version" || key == "session_start");
+}
+
+void SEN66Dosimetry::setMetadata(const String &key, const String &value, bool clearLog) {
+    // Check if this is the first time setting a dynamic metadata field
+    bool isNewDynamicField = shouldClearLogForMetadata(key) && 
+                             (_metadata.find(key) == _metadata.end() || _metadata[key].length() == 0);
+    
+    // Check if we're changing an existing dynamic metadata value
+    bool isChangingDynamicField = shouldClearLogForMetadata(key) && 
+                                  _metadata.find(key) != _metadata.end() && 
+                                  _metadata[key] != value && 
+                                  _metadata[key].length() > 0;
+    
+    _metadata[key] = value;
+    saveMetadata();
+    Serial.printf("Metadata set: %s = %s\n", key.c_str(), value.c_str());
+    
+    // Clear log file if requested or if changing dynamic metadata
+    if (clearLog && LittleFS.exists(_logFilePath)) {
+        Serial.println("⚠ Clearing existing log file due to metadata change...");
+        LittleFS.remove(_logFilePath);
+        Serial.println("✓ Log file cleared. New log will include updated metadata.");
+    } else if (isNewDynamicField || isChangingDynamicField) {
+        Serial.println();
+        Serial.println("⚠ WARNING: You are changing metadata that appears in CSV columns.");
+        Serial.println("   The existing log file should be cleared to maintain data consistency.");
+        Serial.println("   Use the 'clear' command to remove the old log file.");
+        Serial.println("   Or download it first with the 'dump' command.");
+    }
+}
+
+String SEN66Dosimetry::getMetadata(const String &key, const String &defaultValue) const {
+    auto it = _metadata.find(key);
+    if (it != _metadata.end()) {
+        return it->second;
+    }
+    return defaultValue;
+}
+
+std::vector<String> SEN66Dosimetry::getMetadataKeys() const {
+    std::vector<String> keys;
+    for (const auto &pair : _metadata) {
+        keys.push_back(pair.first);
+    }
+    return keys;
+}
+
+void SEN66Dosimetry::setUser(const String &user) {
+    setMetadata("user", user);
+}
+
+void SEN66Dosimetry::setProject(const String &project) {
+    setMetadata("project", project);
+}
+
+void SEN66Dosimetry::setLocation(const String &location) {
+    setMetadata("location", location);
+}
+
+bool SEN66Dosimetry::resetMetadata() {
+    // Clear all non-system metadata from the map
+    auto it = _metadata.begin();
+    while (it != _metadata.end()) {
+        if (it->first != "device_name" && it->first != "firmware_version" && it->first != "session_start") {
+            it = _metadata.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    
+    // Set default metadata keys with NOT_SET values
+    _metadata["user"] = "NOT_SET";
+    _metadata["project"] = "NOT_SET";
+    _metadata["location"] = "NOT_SET";
+    
+    // Save to NVS
+    saveMetadata();
+    
+    return true;
 }
 
