@@ -31,12 +31,49 @@
 #include <Preferences.h>
 #include <vector>
 #include <map>
+#include <time.h>
+#include <sys/time.h>
 
 // Default sampling interval (seconds) for TWA calculations
 #define DEFAULT_SAMPLING_INTERVAL 60
 #define DEFAULT_MEASUREMENT_INTERVAL 20  // seconds
 #define DEFAULT_LOGGING_INTERVAL 20  // seconds
 #define TWA_WINDOW_SECONDS (8 * 3600)  // 8 hours in seconds
+#define MIN_OSHA_HOURS 8.0              // OSHA minimum data requirement
+
+// RTC Configuration
+#define RTC_SYNC_INTERVAL_HOURS 24      // Re-sync every 24 hours
+#define RTC_DRIFT_WARNING_PPM 100       // Warn if drift >100 ppm
+
+/**
+ * @brief Time source enumeration for timestamp generation
+ */
+enum TimeSource {
+    TIME_SOURCE_RTC,           // ESP32 RTC (preferred)
+    TIME_SOURCE_SYNCED,        // Legacy synced time (millis + offset)
+    TIME_SOURCE_UPTIME,        // Fallback uptime (millis/1000)
+    TIME_SOURCE_INVALID        // No valid time source
+};
+
+/**
+ * @brief TWA Export Result structure for regulatory compliance
+ */
+struct TWAExportResult {
+    float twa_pm1_0;               // 8-hour TWA PM1.0 µg/m³
+    float twa_pm2_5;               // 8-hour TWA PM2.5 µg/m³
+    float twa_pm4_0;               // 8-hour TWA PM4.0 µg/m³
+    float twa_pm10;                // 8-hour TWA PM10 µg/m³
+    float dataCoverageHours;       // Hours of data analyzed
+    bool oshaCompliant;            // true if >= 8 hours of data
+    unsigned long samplesAnalyzed; // Number of samples processed
+    unsigned long dataGaps;        // Number of data gaps detected
+    String exportStartTime;        // Start time of export period (local time)
+    String exportEndTime;          // End time of export period (local time)
+};
+
+// Forward declarations for TWA calculation classes
+class FastTWA;
+class ExportTWA;
 
 /**
  * @brief Configuration structure for sensor operation
@@ -89,6 +126,11 @@ public:
      * @param samplingInterval Sampling interval in seconds for TWA calculations
      */
     SEN66Dosimetry(TwoWire &wire = Wire, uint16_t samplingInterval = DEFAULT_SAMPLING_INTERVAL);
+    
+    /**
+     * @brief Destructor - cleanup FastTWA instances
+     */
+    ~SEN66Dosimetry();
 
     /**
      * @brief Initialize the library, sensor, and filesystem
@@ -112,10 +154,23 @@ public:
     SensorData getData() const;
 
     /**
-     * @brief Update 8-hour TWA calculations with new sensor data
+     * @brief Update 8-hour TWA calculations with new sensor data (real-time estimate)
      * @param data Reference to SensorData to update with TWA values
      */
     void updateTWA(SensorData &data);
+
+    /**
+     * @brief Export CSV with OSHA-compliant 8-hour TWA calculations
+     * @param filename Output filename for export
+     * @return true if export successful, false otherwise
+     */
+    bool exportCSVWithTWA(const String &filename);
+
+    /**
+     * @brief Get the result of the last TWA export operation
+     * @return TWAExportResult structure with calculation details
+     */
+    TWAExportResult getLastTWAExport() const;
 
     /**
      * @brief Log a sensor data entry to CSV file
@@ -162,11 +217,7 @@ public:
      */
     bool stopMeasurement();
 
-    /**
-     * @brief Set the current Unix timestamp (for time synchronization)
-     * @param unixTime Unix timestamp in seconds since epoch (1970-01-01)
-     */
-    void setUnixTime(uint32_t unixTime);
+
 
     /**
      * @brief Get the current Unix timestamp
@@ -239,6 +290,62 @@ public:
      */
     String formatLocalTime(uint32_t unixTime) const;
 
+    // RTC Management Functions
+    /**
+     * @brief Initialize ESP32 RTC with system time
+     * @return True if RTC initialized successfully
+     */
+    void initializeRTC();
+
+    /**
+     * @brief Set RTC time from Unix timestamp
+     * @param unixTime Unix timestamp to set
+     * @return True if time set successfully
+     */
+    bool setRTCTime(unsigned long unixTime);
+
+    /**
+     * @brief Get current Unix timestamp from RTC
+     * @return Current Unix timestamp, 0 if RTC not available
+     */
+    unsigned long getRTCTime();
+
+    /**
+     * @brief Check if RTC is initialized
+     * @return True if RTC is initialized and working
+     */
+    bool isRTCInitialized();
+    
+    /**
+     * @brief Get current timestamp using best available source
+     * @return Current Unix timestamp from RTC, legacy sync, or millis
+     */
+    unsigned long getCurrentTimestamp();
+    
+    /**
+     * @brief Get RTC status as formatted string
+     * @return String containing RTC status information
+     */
+    String getRTCStatus();
+    
+    /**
+     * @brief Check if RTC needs synchronization
+     * @return True if sync recommended (>24h since last sync)
+     */
+    bool needsRTCSync();
+
+    /**
+     * @brief Get current time source being used
+     * @return TimeSource enumeration
+     */
+    TimeSource getTimeSource();
+
+    /**
+     * @brief Get time quality information string
+     * @return Descriptive string of current time source and sync status
+     */
+    String getTimeQualityInfo();
+
     // Metadata management
     /**
      * @brief Set a metadata key-value pair
@@ -307,19 +414,19 @@ private:
     // Metadata storage
     std::map<String, String> _metadata;
     
-    // Time synchronization
-    uint32_t _timeOffset;      // Offset to convert millis() to Unix time
-    bool _timeSynced;          // Whether time has been synchronized
-    uint32_t _syncMillis;      // millis() value when time was synced
+
     
-    // Circular buffers for TWA calculations
-    std::vector<float> _pm1_buffer;
-    std::vector<float> _pm2_5_buffer;
-    std::vector<float> _pm4_buffer;
-    std::vector<float> _pm10_buffer;
-    size_t _bufferSize;
-    size_t _bufferIndex;
-    bool _bufferFull;
+    // RTC Management
+    bool _rtcInitialized;      // Whether ESP32 RTC is initialized
+    uint32_t _lastSyncTime;    // Last external sync timestamp (Unix time)
+    uint32_t _bootTime;        // System boot time (Unix timestamp)
+    
+    // Hybrid TWA calculation system
+    FastTWA* _pm1_fastTWA;
+    FastTWA* _pm2_5_fastTWA;
+    FastTWA* _pm4_fastTWA;
+    FastTWA* _pm10_fastTWA;
+    TWAExportResult _lastTWAExport;
     SensirionI2cSen66 _sensor;
 
     // Internal helper methods
@@ -331,9 +438,13 @@ private:
     float calculateAbsoluteHumidity(float temp, float humidity);
     
     // TWA calculation helpers
-    void initializeTWABuffers();
-    void addToTWABuffer(std::vector<float> &buffer, float value);
-    float calculateTWAFromBuffer(const std::vector<float> &buffer);
+    void initializeFastTWA();
+    void cleanupFastTWA();
+    bool parseCSVLine(const String &line, SensorData &data, unsigned long &timestamp);
+    float calculateTimeWeightedTWA(const std::vector<std::pair<unsigned long, float>> &dataPoints, 
+                                   unsigned long periodStart, unsigned long periodEnd,
+                                   unsigned long &gaps);
+    bool writeExportHeader(File &file);
     
     // CSV logging helpers
     bool ensureLogFileExists();
@@ -343,6 +454,62 @@ private:
     // Metadata persistence
     void loadMetadata();
     void saveMetadata();
+};
+
+/**
+ * @brief Fast TWA calculator for real-time estimates
+ * Uses dynamic circular buffer that adapts to measurement intervals
+ */
+class FastTWA {
+public:
+    FastTWA(uint16_t samplingInterval);
+    ~FastTWA();
+    
+    void updateSamplingInterval(uint16_t newInterval);
+    void addSample(float value);
+    float getCurrentTWA() const;
+    bool hasValidTWA() const;
+    
+private:
+    std::vector<float> _buffer;
+    size_t _bufferSize;
+    size_t _bufferIndex;
+    bool _bufferFull;
+    float _sum;
+    uint16_t _samplingInterval;
+    
+    void calculateBufferSize();
+};
+
+/**
+ * @brief Export TWA calculator for OSHA-compliant regulatory reporting
+ * Processes complete CSV datasets for accurate time-weighted calculations
+ */
+class ExportTWA {
+public:
+    static TWAExportResult calculateFromCSV(
+        const String &csvData, 
+        int16_t utcOffset,
+        unsigned long exportStart = 0,  // 0 = use all data
+        unsigned long exportEnd = 0     // 0 = use all data
+    );
+    
+private:
+    struct DataPoint {
+        unsigned long timestamp;
+        float pm1_0;
+        float pm2_5;
+        float pm4_0;
+        float pm10;
+    };
+    
+    static bool parseDataPoints(const String &csvData, std::vector<DataPoint> &points);
+    static float calculateWeightedAverage(const std::vector<DataPoint> &points, 
+                                          const String &parameter,
+                                          unsigned long periodStart, 
+                                          unsigned long periodEnd,
+                                          unsigned long &gaps);
+    static String formatLocalTime(unsigned long timestamp, int16_t utcOffset);
 };
 
 #endif // SEN66_DOSIMETRY_H

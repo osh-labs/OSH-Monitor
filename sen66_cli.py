@@ -219,29 +219,78 @@ class SEN66CLI:
         else:
             print("Failed to send clear command")
     
-    def timesync(self):
-        """Synchronize the board's time with current Unix timestamp"""
+
+    
+    def rtc_status(self):
+        """Show ESP32 RTC status and timing information"""
+        print("\nRetrieving RTC status...")
+        
+        if self.send_command("rtc status"):
+            time.sleep(0.5)
+            
+            # Read the RTC status response, filtering out sensor measurements
+            timeout = time.time() + 5
+            collecting_response = False
+            rtc_response_complete = False
+            
+            while time.time() < timeout and not rtc_response_complete:
+                if self.ser.in_waiting:
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                    if line:
+                        # Filter out sensor measurement lines
+                        if any(keyword in line for keyword in ["PM1.0", "PM2.5", "PM4.0", "PM10", "Temperature", "Humidity", "VOC", "NOx", "CO2", "Timestamp", "Fast TWA", "Export TWA"]):
+                            continue  # Skip sensor measurement data
+                        
+                        # Only print RTC-related lines
+                        if ("RTC Status" in line or "═══" in line or 
+                            "Initialized:" in line or "Current Time:" in line or 
+                            "Last Sync:" in line or "Time Since Sync:" in line or 
+                            "Needs Sync:" in line or "Active Source:" in line or
+                            "RTC Time" in line or "Legacy Sync" in line or "Millis Only" in line):
+                            print(line)
+                            collecting_response = True
+                            
+                            # Check if this is the end of RTC status
+                            if collecting_response and "Active Source:" in line:
+                                rtc_response_complete = True
+                else:
+                    time.sleep(0.1)
+        else:
+            print("Failed to send RTC status command")
+    
+    def rtc_sync(self):
+        """Synchronize the ESP32 RTC with current Unix timestamp"""
         import time as time_module
         
         unix_time = int(time_module.time())
-        print(f"\nSynchronizing board time to Unix timestamp: {unix_time}")
+        print(f"\nSynchronizing ESP32 RTC to Unix timestamp: {unix_time}")
         
-        if self.send_command(f"timesync {unix_time}"):
+        if self.send_command(f"rtc sync {unix_time}"):
             time.sleep(0.5)
             
-            # Read just the sync response, not measurements
+            # Read the sync response, filtering out sensor measurements
             timeout = time.time() + 3
             while time.time() < timeout:
                 if self.ser.in_waiting:
                     line = self.ser.readline().decode('utf-8', errors='ignore').strip()
                     if line:
-                        print(line)
-                        if "synchronized" in line.lower() or "error" in line.lower():
-                            break
+                        # Filter out sensor measurement lines
+                        if any(keyword in line for keyword in ["PM1.0", "PM2.5", "PM4.0", "PM10", "Temperature", "Humidity", "VOC", "NOx", "CO2", "Timestamp", "Fast TWA", "Export TWA"]):
+                            continue  # Skip sensor measurement data
+                        
+                        # Only print RTC sync related lines
+                        if ("[RTC]" in line or "synchronized" in line.lower() or 
+                            "error" in line.lower() or "power cycles" in line.lower() or
+                            "Setting RTC time" in line or "RTC time set" in line or
+                            "Failed to set RTC" in line):
+                            print(line)
+                            if ("synchronized" in line.lower() or "error" in line.lower() or 
+                                "power cycles" in line.lower()):
+                                break
                 else:
                     time.sleep(0.1)
         else:
-            print("Failed to send timesync command")
+            print("Failed to send RTC sync command")
     
     def show_config(self):
         """Show current board configuration"""
@@ -359,6 +408,44 @@ class SEN66CLI:
             print("   Examples: timezone -5  (EST), timezone +9  (JST)")
             return False
             
+    def export_twa_data(self, output_file=None):
+        """Export CSV with OSHA-compliant TWA calculations"""
+        if output_file is None:
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = f"twa_export_{timestamp}.csv"
+            
+        print("\n📊 Generating OSHA-compliant 8-hour TWA export...")
+        
+        if self.send_command("export_twa"):
+            time.sleep(2.0)  # Give more time for TWA calculations
+            
+            # Read TWA calculation results
+            response_lines = []
+            timeout = time.time() + 10
+            
+            while time.time() < timeout:
+                if self.ser.in_waiting:
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                    if line:
+                        print(line)  # Show TWA calculation progress
+                        response_lines.append(line)
+                        if "Export file:" in line or "TWA export failed" in line:
+                            break
+                else:
+                    time.sleep(0.1)
+            
+            # If export succeeded, download the TWA file
+            if any("Export file:" in line for line in response_lines):
+                print(f"\n📥 Downloading TWA export to {output_file}...")
+                return self._download_file("/twa_export.csv", output_file)
+            else:
+                print("❌ TWA export failed")
+                return False
+        else:
+            print("❌ Failed to send export_twa command")
+            return False
+    
     def download_log(self, output_file=None):
         """Download the CSV log file"""
         # Add timestamp to filename if using default
@@ -369,7 +456,22 @@ class SEN66CLI:
         
         print(f"\nDownloading log file to {output_file}...")
         
-        if self.send_command("dump"):
+        # First, automatically generate TWA export for regulatory compliance
+        twa_filename = output_file.replace('.csv', '_with_twa.csv')
+        print("📊 Also generating OSHA TWA export...")
+        self.export_twa_data(twa_filename)
+        
+        return self._download_file("/sensor_log.csv", output_file)
+    
+    def _download_file(self, source_path, output_file):
+        """Internal method to download a file from the device"""
+        # Choose the appropriate dump command based on source file
+        if source_path == "/twa_export.csv":
+            dump_command = "dump_twa"
+        else:
+            dump_command = "dump"
+            
+        if self.send_command(dump_command):
             time.sleep(1.0)  # Give board more time to start sending
             
             # Read the dump output
@@ -435,8 +537,12 @@ class SEN66CLI:
                 if comment_lines:
                     print(f"  Including {len(comment_lines)} metadata comment lines")
                 print(f"  File size: {output_path.stat().st_size} bytes")
+                return True
             else:
                 print("✗ No CSV data received. Log file may be empty or corrupted.")
+                return False
+        else:
+            return False
                 
     def monitor(self):
         """Monitor live output from the board"""
@@ -738,7 +844,9 @@ def interactive_mode(port=None, baudrate=115200):
     print("  status              - Show current measurement")
     print("  clear               - Clear log file")
     print("  download [file]     - Download log (default: sensor_log.csv)")
-    print("  timesync            - Synchronize time with PC")
+    print("  export_twa [file]   - Export 8-hour TWA calculations")
+    print("  rtc status          - Show ESP32 RTC status")
+    print("  rtc sync            - Synchronize ESP32 RTC")
     print("  config              - Show current configuration")
     print("  prefs <key> <value> - Set config (measurement, logging, utc)")
     print("  timezone <offset>   - Set UTC offset hours (-12 to +14)")
@@ -783,7 +891,9 @@ def interactive_mode(port=None, baudrate=115200):
                 print("  status              - Show current measurement")
                 print("  clear               - Clear log file")
                 print("  download [file]     - Download log (default: sensor_log.csv)")
-                print("  timesync            - Synchronize time with PC")
+                print("  export_twa [file]   - Export 8-hour TWA calculations")
+                print("  rtc status          - Show ESP32 RTC status")
+                print("  rtc sync            - Synchronize ESP32 RTC")
                 print("  config              - Show current configuration")
                 print("  prefs <key> <value> - Set config (measurement, logging, utc)")
                 print("  timezone <offset>   - Set UTC offset hours (-12 to +14)")
@@ -817,8 +927,23 @@ def interactive_mode(port=None, baudrate=115200):
             elif cmd == 'download':
                 output_file = args[0] if args else 'sensor_log.csv'
                 cli.download_log(output_file)
-            elif cmd == 'timesync' or cmd == 'sync':
-                cli.timesync()
+            elif cmd == 'twa' or cmd == 'export_twa':
+                output_file = args[0] if args else None
+                cli.export_twa_data(output_file)
+            elif cmd == 'rtc':
+                if len(args) >= 1:
+                    if args[0] == 'status':
+                        cli.rtc_status()
+                    elif args[0] == 'sync':
+                        cli.rtc_sync()
+                    else:
+                        print("Usage: rtc <status|sync>")
+                        print("  rtc status  - Show ESP32 RTC status")
+                        print("  rtc sync    - Synchronize ESP32 RTC")
+                else:
+                    print("Usage: rtc <status|sync>")
+                    print("  rtc status  - Show ESP32 RTC status")
+                    print("  rtc sync    - Synchronize ESP32 RTC")
             elif cmd == 'config':
                 cli.show_config()
             elif cmd == 'prefs' or cmd == 'set':  # Accept both for compatibility
@@ -856,7 +981,9 @@ def interactive_mode(port=None, baudrate=115200):
                 print("  status              - Show current measurement")
                 print("  clear               - Clear log file")
                 print("  download [file]     - Download log (default: sensor_log.csv)")
-                print("  timesync            - Synchronize time with PC")
+                print("  export_twa [file]   - Export 8-hour TWA calculations")
+                print("  rtc status          - Show ESP32 RTC status")
+                print("  rtc sync            - Synchronize ESP32 RTC")
                 print("  config              - Show current configuration")
                 print("  prefs <key> <value> - Set config (measurement, logging, utc)")
                 print("  timezone <offset>   - Set UTC offset hours (-12 to +14)")
@@ -893,7 +1020,9 @@ Examples:
   %(prog)s status --port COM5              # Specify port
   %(prog)s clear                           # Clear log file
   %(prog)s download --output data.csv      # Download log file
-  %(prog)s sync                            # Sync time with PC
+  %(prog)s export-twa                      # Export 8-hour TWA calculations
+  %(prog)s rtc-status                      # Show ESP32 RTC status
+  %(prog)s rtc-sync                        # Sync ESP32 RTC time
   %(prog)s timezone --offset -5            # Set timezone to UTC-5 (EST)
   %(prog)s timezone --offset +9 --port COM5 # Set timezone to UTC+9 (JST)
   %(prog)s monitor                         # Monitor live data
@@ -904,7 +1033,7 @@ Examples:
     
     parser.add_argument('command', 
                        nargs='?',
-                       choices=['status', 'clear', 'download', 'monitor', 'sync', 'config', 'set', 'metadata', 'meta', 'timezone', 'utc', 'about', 'list-ports', 'console'],
+                       choices=['status', 'clear', 'download', 'export-twa', 'monitor', 'rtc-status', 'rtc-sync', 'config', 'set', 'metadata', 'meta', 'timezone', 'utc', 'about', 'list-ports', 'console'],
                        help='Command to execute (omit for interactive mode)')
     parser.add_argument('--port', '-p',
                        help='Serial port (e.g., COM5, /dev/ttyUSB0)')
@@ -953,8 +1082,12 @@ Examples:
             cli.clear_log()
         elif args.command == 'download':
             cli.download_log(args.output)
-        elif args.command == 'timesync' or args.command == 'sync':
-            cli.timesync()
+        elif args.command == 'export-twa':
+            cli.export_twa_data()
+        elif args.command == 'rtc-status':
+            cli.rtc_status()
+        elif args.command == 'rtc-sync':
+            cli.rtc_sync()
         elif args.command == 'config':
             cli.show_config()
         elif args.command == 'set':
@@ -990,7 +1123,9 @@ Examples:
             print("  status              - Show current measurement")
             print("  clear               - Clear log file")
             print("  download            - Download CSV log file")
-            print("  timesync            - Synchronize time with PC")
+            print("  export-twa          - Export 8-hour TWA calculations")
+            print("  rtc-status          - Show ESP32 RTC status")
+            print("  rtc-sync            - Synchronize ESP32 RTC")
             print("  config              - Show current configuration")
             print("  set                 - Set configuration value")
             print("  timezone            - Set UTC offset (timezone)")

@@ -35,7 +35,7 @@
 #define SDA_PIN 3
 #define SCL_PIN 4
 
-// Create sensor instance with 20-second sampling interval for TWA (debugging)
+// Create sensor instance with 20-second sampling interval for TWA calculations
 SEN66Dosimetry airQualitySensor(Wire, 20);
 
 // Timing variables
@@ -46,6 +46,7 @@ unsigned long measurementCount = 0;
 // Function declarations
 void handleSerialCommands();
 void dumpCSVFile();
+void dumpTWAFile();
 void listFiles();
 void showHelp();
 void showMetadata();
@@ -134,9 +135,11 @@ void setup() {
     Serial.println("💡 Serial Commands Available:");
     Serial.println("   help            - Show available commands");
     Serial.println("   dump            - Display CSV file contents");
+    Serial.println("   export_twa      - Export 8-hour TWA calculations");
     Serial.println("   list            - List all files in filesystem");
     Serial.println("   clear           - Clear the CSV log file");
-    Serial.println("   timesync <time> - Synchronize Unix timestamp");
+    Serial.println("   rtc status      - Show RTC status and timing info");
+    Serial.println("   rtc sync <time> - Synchronize ESP32 RTC to Unix time");
     Serial.println("   config          - Show current configuration");
     Serial.println("   prefs <key> <val> - Set configuration value");
     Serial.println("   metadata        - Show all metadata");
@@ -207,23 +210,39 @@ void handleSerialCommands() {
         String command = Serial.readStringUntil('\n');
         command.trim();
         
-        // Check for time sync command first (case-sensitive for parsing)
-        if (command.startsWith("timesync ") || command.startsWith("sync ")) {
-            String unixTimeStr;
-            if (command.startsWith("timesync ")) {
-                unixTimeStr = command.substring(9);  // Length of "timesync "
-            } else {
-                unixTimeStr = command.substring(5);  // Length of "sync "
-            }
-            unixTimeStr.trim();
-            uint32_t unixTime = unixTimeStr.toInt();
+
+        
+        // Handle RTC commands
+        if (command.startsWith("rtc ")) {
+            String rtcCommand = command.substring(4);
+            rtcCommand.trim();
             
-            if (unixTime > 0) {
-                airQualitySensor.setUnixTime(unixTime);
-                Serial.printf("✓ Time synchronized to Unix timestamp: %lu\n\n", unixTime);
+            if (rtcCommand == "status") {
+                Serial.println("\n🕐 RTC Status Report:");
+                Serial.println("═══════════════════════════════════════════════════════════");
+                Serial.print(airQualitySensor.getRTCStatus());
+                Serial.println("═══════════════════════════════════════════════════════════\n");
+            } else if (rtcCommand.startsWith("sync ")) {
+                String unixTimeStr = rtcCommand.substring(5);
+                unixTimeStr.trim();
+                uint32_t unixTime = unixTimeStr.toInt();
+                
+                if (unixTime > 0) {
+                    if (airQualitySensor.setRTCTime(unixTime)) {
+                        Serial.printf("✓ ESP32 RTC synchronized to Unix timestamp: %lu\n", unixTime);
+                        Serial.println("✓ RTC will maintain time across power cycles\n");
+                    } else {
+                        Serial.println("❌ ERROR: Failed to set RTC time\n");
+                    }
+                } else {
+                    Serial.println("❌ ERROR: Invalid Unix timestamp\n");
+                    Serial.println("Usage: rtc sync <unix_timestamp>\n");
+                }
             } else {
-                Serial.println("❌ ERROR: Invalid Unix timestamp\n");
-                Serial.println("Usage: sync <unix_timestamp>\n");
+                Serial.println("❌ ERROR: Unknown RTC command\n");
+                Serial.println("Available RTC commands:");
+                Serial.println("   rtc status       - Show RTC status");
+                Serial.println("   rtc sync <time>  - Synchronize RTC\n");
             }
             return;
         }
@@ -403,6 +422,8 @@ void handleSerialCommands() {
             showHelp();
         } else if (command == "dump" || command == "d") {
             dumpCSVFile();
+        } else if (command == "dump_twa") {
+            dumpTWAFile();
         } else if (command == "list" || command == "ls") {
             listFiles();
         } else if (command == "clear" || command == "c") {
@@ -446,6 +467,27 @@ void handleSerialCommands() {
             Serial.println("\n💡 Tip: Use 'prefs <key> <value>' to change configuration settings");
         } else if (command == "metadata" || command == "meta") {
             showMetadata();
+        } else if (command == "export_twa" || command == "twa") {
+            Serial.println("\n📊 Calculating OSHA-compliant 8-hour TWA...");
+            
+            if (airQualitySensor.exportCSVWithTWA("/twa_export.csv")) {
+                TWAExportResult twa = airQualitySensor.getLastTWAExport();
+                
+                Serial.println("✓ TWA Export Complete!");
+                Serial.printf("📈 Data Coverage: %.1f hours\n", twa.dataCoverageHours);
+                Serial.printf("🏭 OSHA Compliant: %s\n", 
+                             twa.oshaCompliant ? "YES (≥8 hours)" : "NO (< 8 hours - insufficient data)");
+                Serial.printf("📋 PM2.5 8-hr TWA: %.3f µg/m³\n", twa.twa_pm2_5);
+                Serial.printf("📋 PM10 8-hr TWA: %.3f µg/m³\n", twa.twa_pm10);
+                Serial.printf("📁 Export file: /twa_export.csv\n");
+                Serial.printf("📊 Samples analyzed: %lu\n", twa.samplesAnalyzed);
+                if (twa.dataGaps > 0) {
+                    Serial.printf("⚠ Data gaps detected: %lu\n", twa.dataGaps);
+                }
+                Serial.println();
+            } else {
+                Serial.println("❌ TWA export failed. Check log file.");
+            }
         } else if (command.length() > 0) {
             Serial.println("\n❌ Unknown command. Type 'help' for available commands.\n");
         }
@@ -458,9 +500,11 @@ void showHelp() {
     Serial.println("╠═════════════════════════════════════════════════════════════╣");
     Serial.println("║ help, h, ?              - Show this help message            ║");
     Serial.println("║ dump, d                 - Display CSV file contents         ║");
+    Serial.println("║ export_twa, twa         - Export 8-hour TWA calculations    ║");
     Serial.println("║ list, ls                - List all files in filesystem      ║");
     Serial.println("║ clear, c                - Clear the CSV log file            ║");
-    Serial.println("║ timesync <unix_time>    - Synchronize system time           ║");
+    Serial.println("║ rtc status              - Show ESP32 RTC status & timing    ║");
+    Serial.println("║ rtc sync <unix_time>    - Synchronize ESP32 RTC             ║");
     Serial.println("║ config, cfg             - Show current configuration        ║");
     Serial.println("║ prefs <key> <value>     - Set configuration value           ║");
     Serial.println("║   Keys: measurement, logging (seconds), utc (offset hours)   ║");
@@ -560,6 +604,58 @@ void listFiles() {
     Serial.println();
     Serial.printf("Filesystem: %zu bytes total, %zu bytes used (%.1f%%)\n", 
                   totalBytes, usedBytes, (usedBytes * 100.0) / totalBytes);
+    Serial.println("═══════════════════════════════════════════════════════════\n");
+}
+
+void dumpTWAFile() {
+    Serial.println("\n📄 Dumping TWA export file: /twa_export.csv");
+    Serial.println("═══════════════════════════════════════════════════════════");
+    
+    if (!LittleFS.exists("/twa_export.csv")) {
+        Serial.println("❌ TWA export file does not exist yet.");
+        Serial.println("   Use 'export_twa' command to create the file first.\n");
+        return;
+    }
+    
+    File file = LittleFS.open("/twa_export.csv", "r");
+    if (!file) {
+        Serial.println("❌ ERROR: Failed to open TWA export file for reading.\n");
+        return;
+    }
+    
+    // Display file size
+    size_t fileSize = file.size();
+    Serial.printf("File size: %zu bytes\n\n", fileSize);
+    
+    // Read and display file contents
+    int lineNum = 0;
+    int dataNum = 0;
+    bool headerSeen = false;
+    
+    while (file.available()) {
+        String line = file.readStringUntil('\n');
+        line.trim(); // Remove trailing whitespace/newlines
+        lineNum++;
+        
+        if (line.length() == 0) continue; // Skip empty lines
+        
+        if (line.startsWith("#")) {
+            // Comment line
+            Serial.printf("[COMMENT]%s\n", line.c_str());
+        } else {
+            // Data line (including header)
+            if (!headerSeen && line.indexOf(',') >= 0) {
+                Serial.printf("[HEADER]%s\n", line.c_str());
+                headerSeen = true;
+            } else {
+                Serial.printf("[DATA]%s\n", line.c_str());
+                dataNum++;
+            }
+        }
+    }
+    
+    file.close();
+    Serial.printf("\nTotal lines: %d (including %d data rows)\n", lineNum, dataNum);
     Serial.println("═══════════════════════════════════════════════════════════\n");
 }
 
