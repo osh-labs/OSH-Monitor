@@ -292,6 +292,41 @@ class SEN66CLI:
         else:
             print("Failed to send RTC sync command")
     
+    def show_storage(self):
+        """Show filesystem storage statistics"""
+        print("\nRetrieving storage statistics...")
+        
+        if self.send_command("storage"):
+            time.sleep(0.5)
+            
+            # Read the storage response, filtering out sensor measurements
+            timeout = time.time() + 3
+            lines_found = []
+            while time.time() < timeout:
+                if self.ser.in_waiting:
+                    line = self.ser.readline().decode('utf-8', errors='ignore').strip()
+                    if line:
+                        # Filter out sensor measurement lines
+                        if any(keyword in line for keyword in ["PM1.0", "PM2.5", "PM4.0", "PM10", "Temperature", "Humidity", "VOC", "NOx", "CO2", "Timestamp", "Fast TWA", "Export TWA"]):
+                            continue
+                        
+                        # Capture storage-related lines
+                        if ("Storage" in line or "Total Capacity" in line or "Used:" in line or 
+                            "Free:" in line or "bytes/entry" in line or "Estimated remaining" in line or
+                            "Warning threshold" in line or "WARNING" in line or "═══" in line):
+                            lines_found.append(line)
+                            print(line)
+                        elif lines_found and line == "":
+                            # End of storage output
+                            break
+                else:
+                    time.sleep(0.1)
+            
+            if not lines_found:
+                print("No storage information received")
+        else:
+            print("Failed to send storage command")
+    
     def show_config(self):
         """Show current board configuration"""
         print("\nRetrieving configuration...")
@@ -842,6 +877,7 @@ def interactive_mode(port=None, baudrate=115200):
     print("="*60)
     print("\nCommands:")
     print("  status              - Show current measurement")
+    print("  storage, stor       - Show filesystem storage stats")
     print("  clear               - Clear log file")
     print("  download [file]     - Download log (default: sensor_log.csv)")
     print("  export_twa [file]   - Export 8-hour TWA calculations")
@@ -889,13 +925,14 @@ def interactive_mode(port=None, baudrate=115200):
             if cmd in ['help', '?']:
                 print("\nCommands:")
                 print("  status              - Show current measurement")
+                print("  storage, stor       - Show filesystem storage stats")
                 print("  clear               - Clear log file")
                 print("  download [file]     - Download log (default: sensor_log.csv)")
                 print("  export_twa [file]   - Export 8-hour TWA calculations")
                 print("  rtc status          - Show ESP32 RTC status")
                 print("  rtc sync            - Synchronize ESP32 RTC")
                 print("  config              - Show current configuration")
-                print("  prefs <key> <value> - Set config (measurement, logging, utc)")
+                print("  prefs <key> <value> - Set config (measurement, logging, utc, storage_warning)")
                 print("  timezone <offset>   - Set UTC offset hours (-12 to +14)")
                 print("  metadata            - Show all metadata")
                 print("  meta <key> <value>  - Set metadata (user, project, location)")
@@ -922,6 +959,8 @@ def interactive_mode(port=None, baudrate=115200):
             # Execute commands
             if cmd == 'status':
                 cli.get_status()
+            elif cmd == 'storage' or cmd == 'stor':
+                cli.show_storage()
             elif cmd == 'clear':
                 cli.clear_log()
             elif cmd == 'download':
@@ -1033,7 +1072,7 @@ Examples:
     
     parser.add_argument('command', 
                        nargs='?',
-                       choices=['status', 'clear', 'download', 'export-twa', 'monitor', 'rtc-status', 'rtc-sync', 'config', 'set', 'metadata', 'meta', 'timezone', 'utc', 'about', 'list-ports', 'console'],
+                       choices=['status', 'storage', 'clear', 'download', 'export-twa', 'monitor', 'rtc-status', 'rtc-sync', 'config', 'set', 'metadata', 'meta', 'timezone', 'utc', 'about', 'list-ports', 'console'],
                        help='Command to execute (omit for interactive mode)')
     parser.add_argument('--port', '-p',
                        help='Serial port (e.g., COM5, /dev/ttyUSB0)')
@@ -1078,6 +1117,8 @@ Examples:
         # Execute command
         if args.command == 'status':
             cli.get_status()
+        elif args.command == 'storage':
+            cli.show_storage()
         elif args.command == 'clear':
             cli.clear_log()
         elif args.command == 'download':

@@ -413,9 +413,10 @@ python osh_cli.py console
 
 ### Available Commands
 - `status` - Show current sensor measurements with live TWA values
+- `storage` - Display filesystem storage statistics and capacity estimates
 - `config` - Display current configuration including UTC offset
 - `timezone <offset>` - Set UTC offset (-12 to +14 hours)
-- `prefs <key> <value>` - Configure measurement/logging intervals
+- `prefs <key> <value>` - Configure measurement/logging intervals and storage warning threshold
 - `download [file]` - Download CSV log file (automatically generates TWA export)
 - **`export_twa`** - Generate dedicated OSHA-compliant TWA export
 - `timesync` - Synchronize device time with PC (essential for accurate TWA calculations)
@@ -441,6 +442,14 @@ python osh_cli.py console
 
 # Show current status with live TWA values
 python osh_cli.py status
+
+# Check storage capacity and estimated logging time remaining
+python osh_cli.py console
+> storage
+
+# Configure storage warning threshold (1-99%, default 80)
+python osh_cli.py console
+> prefs storage_warning 85
 
 # Monitor with real-time TWA calculations
 python osh_cli.py monitor

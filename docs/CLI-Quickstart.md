@@ -35,6 +35,12 @@ Auto-detection is built-in, but specifying `--port` is more reliable when multip
 python osh_cli.py status --port COM5
 ```
 
+- Check storage capacity:
+```bash
+python osh_cli.py console --port COM5
+> storage
+```
+
 - Download CSV log (timestamped filename):
 ```bash
 python osh_cli.py download --output sensor_log.csv --port COM5
@@ -93,6 +99,7 @@ python osh_cli.py rtc-sync --port COM5
 The CLI talks to the firmware over serial using human-readable commands.
 
 - `status` → Reads recent measurement block from stream (no command sent)
+- `storage` → Sends `storage` and prints filesystem capacity, usage, and estimated remaining hours
 - `clear` → Sends `clear`, shows device warning, relays user confirmation (`yes/no`)
 - `download` → Sends `dump` to stream `/sensor_log.csv` and writes a local file
 - `export-twa` → Sends `export_twa` to compute; then `dump_twa` to fetch `/twa_export.csv`
@@ -192,7 +199,7 @@ python osh_cli.py set --key logging --value 60 --port COM5
 
 Within the console (`osh_cli.py` or `console`), supported commands include:
 
-`status`, `clear`, `download [file]`, `export_twa [file]`, `rtc status`, `rtc sync`, `config`, `prefs <key> <value>`, `timezone <offset>`, `metadata`, `meta <key> <value>`, `resetmeta`, `monitor`, `list-ports`, `about`, `help`, `exit`.
+`status`, `storage`, `clear`, `download [file]`, `export_twa [file]`, `rtc status`, `rtc sync`, `config`, `prefs <key> <value>`, `timezone <offset>`, `metadata`, `meta <key> <value>`, `resetmeta`, `monitor`, `list-ports`, `about`, `help`, `exit`.
 
 This console flushes the buffer between prompts to keep responses clean and predictable.
 
@@ -204,13 +211,14 @@ This console flushes the buffer between prompts to keep responses clean and pred
 |---|---|---|
 | `list-ports` | List available serial ports | `python osh_cli.py list-ports` |
 | `status` | Show latest measurement block | `python osh_cli.py status --port COM5` |
+| `storage` | Show filesystem storage statistics | `python osh_cli.py console --port COM5` then `storage` |
 | `download` | Download `/sensor_log.csv` to local file | `python osh_cli.py download --output sensor_log.csv --port COM5` |
 | `export-twa` | Generate and download 8-hr TWA export | `python osh_cli.py export-twa --port COM5` |
 | `timezone` / `utc` | Set UTC offset [-12,+14] | `python osh_cli.py timezone --offset -5 --port COM5` |
 | `rtc-status` | Show ESP32 RTC status | `python osh_cli.py rtc-status --port COM5` |
 | `rtc-sync` | Sync RTC to host Unix time | `python osh_cli.py rtc-sync --port COM5` |
 | `config` | Show current configuration | `python osh_cli.py config --port COM5` |
-| `set` | Set config value via `prefs <key> <value>` | `python osh_cli.py set --key logging --value 60 --port COM5` |
+| `set` | Set config value via `prefs <key> <value>` (keys: measurement, logging, utc, storage_warning) | `python osh_cli.py set --key logging --value 60 --port COM5` |
 | `metadata` | Show all metadata | `python osh_cli.py metadata --port COM5` |
 | `meta` | Set metadata value | `python osh_cli.py meta --key project --value Demo --port COM5` |
 | `resetmeta` | Reset metadata to defaults and clear log | `python osh_cli.py resetmeta --port COM5` |

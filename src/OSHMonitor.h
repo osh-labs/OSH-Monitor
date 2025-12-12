@@ -65,6 +65,7 @@ struct SensorConfig {
     uint16_t loggingInterval;      // Seconds between log entries (0 = log every measurement)
     uint16_t samplingInterval;     // Seconds for TWA calculations
     int16_t utcOffset;             // UTC offset in hours (-12 to +14)
+    uint8_t storageWarningThreshold; // Storage warning threshold percentage (1-99, default 80)
 };
 
 /**
@@ -95,6 +96,18 @@ struct SensorData {
     float twa_pm10;            // µg/m³
 
     uint32_t timestamp;        // Unix timestamp or uptime in seconds
+};
+
+/**
+ * @brief Storage statistics for filesystem monitoring
+ */
+struct StorageStats {
+    size_t totalBytes;              // Total filesystem capacity
+    size_t usedBytes;               // Currently used bytes
+    size_t freeBytes;               // Available free bytes
+    float percentUsed;              // Percentage of storage used
+    float estimatedHoursRemaining;  // Estimated logging hours remaining
+    size_t averageBytesPerEntry;    // Average bytes per log entry
 };
 
 /**
@@ -200,7 +213,18 @@ public:
      */
     bool stopMeasurement();
 
+    /**
+     * @brief Get filesystem storage statistics
+     * @return StorageStats structure with capacity and usage details
+     */
+    StorageStats getStorageStats();
 
+    /**
+     * @brief Format bytes to human-readable string (B, KB, MB)
+     * @param bytes Number of bytes to format
+     * @return Formatted string (e.g., "1.23 MB")
+     */
+    String formatBytes(size_t bytes);
 
     /**
      * @brief Get the current Unix timestamp
@@ -265,6 +289,18 @@ public:
      * @return Current UTC offset in hours
      */
     int16_t getUtcOffset() const;
+
+    /**
+     * @brief Set storage warning threshold
+     * @param percent Threshold percentage (1-99, default 80)
+     */
+    void setStorageWarningThreshold(uint8_t percent);
+
+    /**
+     * @brief Get storage warning threshold
+     * @return Current threshold percentage
+     */
+    uint8_t getStorageWarningThreshold() const;
 
     /**
      * @brief Convert Unix timestamp to localized human-readable format
@@ -411,6 +447,15 @@ private:
     FastTWA* _pm10_fastTWA;
     TWAExportResult _lastTWAExport;
     SEN66Core* _sensor;
+    
+    // Storage monitoring
+    bool _storageWarningDisplayed;  // Track if warning already shown
+    
+    /**
+     * @brief Calculate average bytes per log entry from actual file
+     * @return Average bytes per entry, or 0 if unable to calculate
+     */
+    size_t calculateAverageBytesPerEntry();
 
     // Internal helper methods
     // Sensor reading now handled by SEN66Core library

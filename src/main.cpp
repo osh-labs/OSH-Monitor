@@ -31,6 +31,9 @@
 #include <Arduino.h>
 #include "OSHMonitor.h"
 
+// Firmware Version
+#define FIRMWARE_VERSION "1.2.0"
+
 // I2C Pin Definitions
 #define SDA_PIN 3
 #define SCL_PIN 4
@@ -96,6 +99,10 @@ void setup() {
     
     printWelcomeBanner();
     
+    Serial.print("Firmware Version: ");
+    Serial.println(FIRMWARE_VERSION);
+    Serial.println();
+    
     Serial.println("🔧 Initializing system...");
     Serial.printf("   - I2C Bus (SDA=%d, SCL=%d)\n", SDA_PIN, SCL_PIN);
     Serial.println("   - LittleFS Filesystem");
@@ -118,6 +125,11 @@ void setup() {
             delay(1000);
         }
     }
+    
+    // Store firmware and library versions in metadata
+    airQualitySensor.setMetadata("firmware_version", FIRMWARE_VERSION);
+    airQualitySensor.setMetadata("sen66core_version", "1.1.1");
+    airQualitySensor.setMetadata("twacore_version", "1.0.0");
     
     Serial.println("✓ Initialization successful!");
     Serial.println();
@@ -404,14 +416,23 @@ void handleSerialCommands() {
                     int16_t offset = valueStr.toInt();
                     airQualitySensor.setUtcOffset(offset);
                     airQualitySensor.saveConfig();
+                } else if (key == "storage_warning" || key == "stor_warn") {
+                    uint8_t threshold = (uint8_t)value;
+                    if (threshold >= 1 && threshold <= 99) {
+                        airQualitySensor.setStorageWarningThreshold(threshold);
+                        Serial.printf("✓ Storage warning threshold set to %d%%\n", threshold);
+                    } else {
+                        Serial.println("❌ Storage threshold must be between 1-99%");
+                    }
                 } else {
                     Serial.printf("❌ Unknown setting: %s\n", key.c_str());
-                    Serial.println("Available settings: measurement, logging, utc\n");
+                    Serial.println("Available settings: measurement, logging, utc, storage_warning\n");
                 }
             } else {
                 Serial.println("❌ ERROR: Invalid format\n");
                 Serial.println("Usage: prefs <measurement|logging> <seconds>\n");
                 Serial.println("       prefs utc <offset_hours>  (e.g., prefs utc -5 for EST)\n");
+                Serial.println("       prefs storage_warning <percent>  (e.g., prefs storage_warning 80)\n");
             }
             return;
         }
@@ -457,12 +478,13 @@ void handleSerialCommands() {
             SensorConfig config = airQualitySensor.getConfig();
             Serial.println("\n📋 Current Configuration:");
             Serial.println("═══════════════════════════════════════════════════════════");
-            Serial.println("  Setting                    Key           Value");
-            Serial.println("  ─────────────────────────  ────────────  ─────────────");
-            Serial.printf("  Measurement Interval       measurement   %d seconds\n", config.measurementInterval);
-            Serial.printf("  Logging Interval           logging       %d seconds\n", config.loggingInterval);
-            Serial.printf("  UTC Offset                 utc           %+d hours\n", config.utcOffset);
-            Serial.printf("  Sampling Interval (TWA)    (read-only)   %d seconds\n", config.samplingInterval);
+            Serial.println("  Setting                    Key               Value");
+            Serial.println("  ─────────────────────────  ────────────────  ─────────────");
+            Serial.printf("  Measurement Interval       measurement       %d seconds\n", config.measurementInterval);
+            Serial.printf("  Logging Interval           logging           %d seconds\n", config.loggingInterval);
+            Serial.printf("  UTC Offset                 utc               %+d hours\n", config.utcOffset);
+            Serial.printf("  Storage Warning Threshold  storage_warning   %d%%\n", config.storageWarningThreshold);
+            Serial.printf("  Sampling Interval (TWA)    (read-only)       %d seconds\n", config.samplingInterval);
             Serial.println("═══════════════════════════════════════════════════════════");
             Serial.println("\n💡 Tip: Use 'prefs <key> <value>' to change configuration settings");
         } else if (command == "metadata" || command == "meta") {
@@ -497,6 +519,24 @@ void handleSerialCommands() {
             } else {
                 Serial.println("❌ TWA export failed. Check log file.");
             }
+        } else if (command == "storage" || command == "stor") {
+            StorageStats stats = airQualitySensor.getStorageStats();
+            
+            Serial.println("\n💾 Storage Statistics:");
+            Serial.println("═══════════════════════════════════════════════════════════");
+            Serial.printf("  Total Capacity:         %s\n", airQualitySensor.formatBytes(stats.totalBytes).c_str());
+            Serial.printf("  Used:                   %s (%.1f%%)\n", 
+                airQualitySensor.formatBytes(stats.usedBytes).c_str(), 
+                stats.percentUsed);
+            Serial.printf("  Free:                   %s\n", airQualitySensor.formatBytes(stats.freeBytes).c_str());
+            Serial.printf("  Avg bytes/entry:        %zu bytes\n", stats.averageBytesPerEntry);
+            Serial.printf("  Estimated remaining:    %.1f hours\n", stats.estimatedHoursRemaining);
+            Serial.printf("  Warning threshold:      %d%%\n", airQualitySensor.getStorageWarningThreshold());
+            
+            if (stats.percentUsed >= airQualitySensor.getStorageWarningThreshold()) {
+                Serial.println("\n⚠ WARNING: Storage threshold exceeded!");
+            }
+            Serial.println("═══════════════════════════════════════════════════════════\n");
         } else if (command.length() > 0) {
             Serial.println("\n❌ Unknown command. Type 'help' for available commands.\n");
         }
@@ -510,6 +550,7 @@ void showHelp() {
     Serial.println("║ help, h, ?              - Show this help message            ║");
     Serial.println("║ dump, d                 - Display CSV file contents         ║");
     Serial.println("║ export_twa, twa         - Export 8-hour TWA calculations    ║");
+    Serial.println("║ storage, stor           - Show filesystem storage stats     ║");
     Serial.println("║ list, ls                - List all files in filesystem      ║");
     Serial.println("║ clear, c                - Clear the CSV log file            ║");
     Serial.println("║ rtc status              - Show ESP32 RTC status & timing    ║");
@@ -517,6 +558,7 @@ void showHelp() {
     Serial.println("║ config, cfg             - Show current configuration        ║");
     Serial.println("║ prefs <key> <value>     - Set configuration value           ║");
     Serial.println("║   Keys: measurement, logging (seconds), utc (offset hours)   ║");
+    Serial.println("║         storage_warning (percent threshold)                  ║");
     Serial.println("║ metadata, meta          - Show all metadata                 ║");
     Serial.println("║ meta <key> <value>      - Set metadata value                ║");
     Serial.println("║   Common: user, project, location                           ║");

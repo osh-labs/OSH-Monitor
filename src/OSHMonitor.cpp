@@ -34,7 +34,8 @@ OSHMonitor::OSHMonitor(TwoWire &wire, uint16_t samplingInterval)
       _pm1_fastTWA(nullptr),
       _pm2_5_fastTWA(nullptr),
       _pm4_fastTWA(nullptr),
-      _pm10_fastTWA(nullptr) {
+      _pm10_fastTWA(nullptr),
+      _storageWarningDisplayed(false) {
     
     memset(&_currentData, 0, sizeof(SensorData));
     memset(&_lastTWAExport, 0, sizeof(TWAExportResult));
@@ -281,7 +282,23 @@ bool OSHMonitor::logEntry(const SensorData &data) {
     }
     
     String csvLine = sensorDataToCSV(data);
-    return appendToLogFile(csvLine);
+    bool success = appendToLogFile(csvLine);
+    
+    // Check storage and warn if threshold exceeded (only once)
+    if (success && !_storageWarningDisplayed) {
+        StorageStats stats = getStorageStats();
+        if (stats.percentUsed >= _config.storageWarningThreshold) {
+            Serial.println("[WARNING] Storage threshold exceeded!");
+            Serial.printf("  Used: %s / %s (%.1f%%)\n", 
+                formatBytes(stats.usedBytes).c_str(),
+                formatBytes(stats.totalBytes).c_str(),
+                stats.percentUsed);
+            Serial.printf("  Estimated time remaining: %.1f hours\n", stats.estimatedHoursRemaining);
+            _storageWarningDisplayed = true;
+        }
+    }
+    
+    return success;
 }
 
 bool OSHMonitor::eraseLogs() {
@@ -352,6 +369,7 @@ void OSHMonitor::loadConfig() {
     _config.loggingInterval = _preferences.getUShort("logInterval", DEFAULT_LOGGING_INTERVAL);
     _config.samplingInterval = _preferences.getUShort("sampInterval", _samplingInterval);
     _config.utcOffset = _preferences.getShort("utcOffset", 0);
+    _config.storageWarningThreshold = _preferences.getUChar("stor_warn", 80);
     
     _preferences.end();
     
@@ -360,6 +378,7 @@ void OSHMonitor::loadConfig() {
     Serial.printf("  Logging Interval: %d seconds\n", _config.loggingInterval);
     Serial.printf("  Sampling Interval: %d seconds\n", _config.samplingInterval);
     Serial.printf("  UTC Offset: %+d hours\n", _config.utcOffset);
+    Serial.printf("  Storage Warning: %d%%\n", _config.storageWarningThreshold);
 }
 
 void OSHMonitor::saveConfig() {
@@ -369,6 +388,7 @@ void OSHMonitor::saveConfig() {
     _preferences.putUShort("logInterval", _config.loggingInterval);
     _preferences.putUShort("sampInterval", _config.samplingInterval);
     _preferences.putShort("utcOffset", _config.utcOffset);
+    _preferences.putUChar("stor_warn", _config.storageWarningThreshold);
     
     _preferences.end();
     
@@ -947,5 +967,91 @@ String OSHMonitor::getRTCStatus() {
     }
     
     return status;
+}
+
+// ============================================================================
+// Storage Monitoring Functions
+// ============================================================================
+
+size_t OSHMonitor::calculateAverageBytesPerEntry() {
+    File logFile = LittleFS.open(_logFilePath, "r");
+    if (!logFile) {
+        return 0;
+    }
+    
+    size_t fileSize = logFile.size();
+    size_t lineCount = 0;
+    
+    // Count lines in file
+    while (logFile.available()) {
+        String line = logFile.readStringUntil('\n');
+        lineCount++;
+    }
+    logFile.close();
+    
+    // Subtract header line (lineCount includes header)
+    if (lineCount <= 1) {
+        return 0;  // No data entries yet, use default estimate
+    }
+    
+    size_t dataLines = lineCount - 1;
+    return fileSize / dataLines;
+}
+
+StorageStats OSHMonitor::getStorageStats() {
+    StorageStats stats;
+    
+    // Get LittleFS capacity information
+    stats.totalBytes = LittleFS.totalBytes();
+    stats.usedBytes = LittleFS.usedBytes();
+    stats.freeBytes = stats.totalBytes - stats.usedBytes;
+    stats.percentUsed = (float)stats.usedBytes / (float)stats.totalBytes * 100.0;
+    
+    // Calculate average bytes per entry from actual log file
+    stats.averageBytesPerEntry = calculateAverageBytesPerEntry();
+    
+    // If no average available, use conservative estimate (150 bytes)
+    if (stats.averageBytesPerEntry == 0) {
+        stats.averageBytesPerEntry = 150;
+    }
+    
+    // Calculate estimated hours remaining
+    // Account for TWA export overhead (1.5x multiplier)
+    size_t effectiveBytesPerEntry = stats.averageBytesPerEntry * 1.5;
+    
+    if (effectiveBytesPerEntry > 0 && _config.loggingInterval > 0) {
+        // Calculate entries that can fit in remaining space
+        size_t remainingEntries = stats.freeBytes / effectiveBytesPerEntry;
+        
+        // Convert to hours based on logging interval
+        stats.estimatedHoursRemaining = (float)remainingEntries * _config.loggingInterval / 3600.0;
+    } else {
+        stats.estimatedHoursRemaining = 0.0;
+    }
+    
+    return stats;
+}
+
+String OSHMonitor::formatBytes(size_t bytes) {
+    if (bytes < 1024) {
+        return String(bytes) + " B";
+    } else if (bytes < 1024 * 1024) {
+        return String(bytes / 1024.0, 2) + " KB";
+    } else {
+        return String(bytes / (1024.0 * 1024.0), 2) + " MB";
+    }
+}
+
+void OSHMonitor::setStorageWarningThreshold(uint8_t percent) {
+    // Clamp to valid range (1-99)
+    if (percent < 1) percent = 1;
+    if (percent > 99) percent = 99;
+    
+    _config.storageWarningThreshold = percent;
+    saveConfig();
+}
+
+uint8_t OSHMonitor::getStorageWarningThreshold() const {
+    return _config.storageWarningThreshold;
 }
 
