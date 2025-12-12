@@ -262,15 +262,125 @@ All operations validate state before execution:
 SEN66RawData data;
 if (!sensor.readRawData(data)) {
     Serial.println(sensor.getLastError());
-    // Output: "Sensor not in measurement mode"
+    // Output: "[Validation] Cannot read data - sensor not in MEASURING state"
 }
 
 // Attempt to start from wrong state
 if (sensor.getState() == SensorState::ERROR) {
     sensor.startMeasurement();  // Returns false
     Serial.println(sensor.getLastError());
-    // Output: "Cannot start measurement - sensor not in IDLE state"
+    // Output: "[Validation] Cannot start measurement from 4 state (requires IDLE)"
 }
+```
+
+### Error Handling Philosophy
+
+**v1.1.0 distinguishes between two error types:**
+
+#### Hardware Failures (Set ERROR State)
+
+These require `deviceReset()` and `begin()` to recover:
+
+- **I2C communication errors** - Sensor not responding, bus timeout
+- **CRC validation failures** - Data corruption detected
+- **Sensor firmware issues** - Invalid responses from sensor
+
+```cpp
+SEN66RawData data;
+if (!sensor.readRawData(data)) {
+    if (sensor.getState() == SensorState::ERROR) {
+        // Hardware failure - requires full reset
+        Serial.println("Hardware error detected, resetting sensor...");
+        sensor.deviceReset();
+        delay(1000);
+        sensor.begin();
+    }
+}
+```
+
+**Error message format:** `[Hardware] Description with I2C error: 0xXX`
+
+#### Validation Failures (Return False, No State Change)
+
+These allow immediate retry without reset:
+
+- **Wrong state for operation** - e.g., reading before starting measurement
+- **Invalid operation sequence** - e.g., starting when already measuring (idempotent)
+- **Sensor not initialized** - e.g., operations before `begin()` completes
+
+```cpp
+// Validation failure - graceful recovery
+if (!sensor.startMeasurement()) {
+    if (sensor.getState() != SensorState::ERROR) {
+        // Validation failure - just retry
+        sensor.stopMeasurement();  // Ensure known state
+        sensor.startMeasurement(); // Try again
+    }
+}
+```
+
+**Error message format:** `[Validation] Description (requires X state)`
+
+#### Valid Operations by State
+
+| State          | begin() | startMeasurement() | stopMeasurement() | readRawData() | deviceReset() |
+|----------------|---------|--------------------|-------------------|---------------|---------------|
+| UNINITIALIZED  | ✓       | ✗ Validation       | ✓ (idempotent)    | ✗ Validation  | ✓             |
+| INITIALIZING   | ✗       | ✗ Validation       | ✗ Validation      | ✗ Validation  | ✓             |
+| IDLE           | ✗       | ✓                  | ✓ (idempotent)    | ✗ Validation  | ✓             |
+| MEASURING      | ✗       | ✓ (idempotent)     | ✓                 | ✓             | ✓             |
+| ERROR          | ✗       | ✗ Validation       | ✗ Validation      | ✗ Validation  | ✓             |
+
+**Note:** ✗ Validation = Returns false without changing state (allows retry)
+
+#### Common Error Scenarios
+
+**Scenario 1: Multiple start calls (idempotent)**
+```cpp
+sensor.begin();              // State: MEASURING
+sensor.startMeasurement();   // Returns true (already measuring)
+sensor.startMeasurement();   // Returns true (idempotent)
+// No errors, no state changes
+```
+
+**Scenario 2: Reading before starting (validation failure)**
+```cpp
+sensor.begin();              // State: MEASURING
+sensor.stopMeasurement();    // State: IDLE
+SEN66RawData data;
+if (!sensor.readRawData(data)) {
+    // State still IDLE, can immediately retry after starting
+    sensor.startMeasurement();
+    sensor.readRawData(data);  // Success
+}
+```
+
+**Scenario 3: I2C communication failure (hardware error)**
+```cpp
+// Sensor unplugged or I2C bus issue
+SEN66RawData data;
+if (!sensor.readRawData(data)) {
+    if (sensor.getState() == SensorState::ERROR) {
+        // Hardware failure - must reset
+        sensor.deviceReset();  // ERROR → UNINITIALIZED
+        delay(1000);
+        sensor.begin();        // Full re-initialization
+    }
+}
+```
+
+**Scenario 4: Power management cycle (validation safe)**
+```cpp
+// Before sleep
+sensor.stopMeasurement();    // MEASURING → IDLE
+sensor.stopMeasurement();    // Returns true (idempotent, no error)
+
+// Enter ESP32 deep sleep...
+
+// After wake
+sensor.startMeasurement();   // IDLE → MEASURING
+sensor.startMeasurement();   // Returns true (idempotent, no error)
+delay(2000);                 // Allow stabilization
 ```
 
 ### Environmental Calculation Algorithms

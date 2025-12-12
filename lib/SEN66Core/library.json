@@ -1,6 +1,6 @@
 {
   "name": "SEN66Core",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Hardware abstraction library for Sensirion SEN66 air quality sensor with I2C communication, CRC validation, and environmental calculations",
   "keywords": [
     "sensor",

@@ -7,7 +7,7 @@
  * 
  * @author Christopher Lee
  * @license GPL-3.0
- * @version 1.1.0
+ * @version 1.1.1
  */
 
 #ifndef SEN66_CORE_H

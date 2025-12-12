@@ -4,7 +4,7 @@
  * 
  * @author Christopher Lee
  * @license GPL-3.0
- * @version 1.1.0
+ * @version 1.1.1
  */
 
 #include "SEN66Core.h"
@@ -24,31 +24,30 @@ bool SEN66Core::begin(int sdaPin, int sclPin, uint32_t i2cFreq) {
     // Initialize Sensirion SEN66 sensor library
     _sensor.begin(_wire, SEN66_I2C_ADDR_6B);
     
-    // Reset the device
+    // Hardware communication - reset the device
     int16_t error = _sensor.deviceReset();
     if (error != 0) {
-        setError("Device reset failed with error: " + String(error));
-        _state = SensorState::ERROR;
+        setError("[Hardware] Device reset failed with I2C error: 0x" + String(error, HEX));
+        _state = SensorState::ERROR;  // Hardware failure
         return false;
     }
     
     // Wait after reset
     delay(1200);
     
-    // Get serial number for verification
+    // Get serial number for verification (non-critical)
     int8_t serialNumber[32] = {0};
     error = _sensor.getSerialNumber(serialNumber, 32);
     if (error != 0) {
-        setError("Failed to read serial number");
+        setError("[Hardware] Failed to read serial number with I2C error: 0x" + String(error, HEX));
         // Non-fatal, continue initialization
     }
     
     _state = SensorState::IDLE;
     
-    // Start measurement
+    // Start measurement (delegates to startMeasurement() which handles errors)
     if (!startMeasurement()) {
-        setError("Failed to start measurement");
-        _state = SensorState::ERROR;
+        // Error already set by startMeasurement(), state already set to ERROR
         return false;
     }
     
@@ -65,16 +64,17 @@ bool SEN66Core::startMeasurement() {
         return true;
     }
     
-    // Can only start from IDLE state
+    // Validation failure - can only start from IDLE state
     if (_state != SensorState::IDLE) {
-        setError("Cannot start measurement - sensor not in IDLE state");
-        return false;
+        setError("[Validation] Cannot start measurement from " + String(static_cast<int>(_state)) + " state (requires IDLE)");
+        return false;  // No ERROR state - validation failure
     }
     
+    // Hardware communication - attempt to start sensor
     int16_t error = _sensor.startContinuousMeasurement();
     if (error != 0) {
-        setError("Start measurement failed with error: " + String(error));
-        _state = SensorState::ERROR;
+        setError("[Hardware] Start measurement failed with I2C error: 0x" + String(error, HEX));
+        _state = SensorState::ERROR;  // Hardware failure
         return false;
     }
     
@@ -88,16 +88,17 @@ bool SEN66Core::stopMeasurement() {
         return true;
     }
     
-    // Can only stop from MEASURING state
+    // Validation failure - can only stop from MEASURING state
     if (_state != SensorState::MEASURING) {
-        setError("Cannot stop measurement - sensor not in MEASURING state");
-        return false;
+        setError("[Validation] Cannot stop measurement from " + String(static_cast<int>(_state)) + " state (requires MEASURING)");
+        return false;  // No ERROR state - validation failure
     }
     
+    // Hardware communication - attempt to stop sensor
     int16_t error = _sensor.stopMeasurement();
     if (error != 0) {
-        setError("Stop measurement failed with error: " + String(error));
-        _state = SensorState::ERROR;
+        setError("[Hardware] Stop measurement failed with I2C error: 0x" + String(error, HEX));
+        _state = SensorState::ERROR;  // Hardware failure
         return false;
     }
     
@@ -106,10 +107,11 @@ bool SEN66Core::stopMeasurement() {
 }
 
 bool SEN66Core::deviceReset() {
+    // Hardware communication - reset sensor from any state
     int16_t error = _sensor.deviceReset();
     if (error != 0) {
-        setError("Device reset failed with error: " + String(error));
-        _state = SensorState::ERROR;
+        setError("[Hardware] Device reset failed with I2C error: 0x" + String(error, HEX));
+        _state = SensorState::ERROR;  // Hardware failure
         return false;
     }
     delay(1200);  // Wait for reset to complete
@@ -118,22 +120,24 @@ bool SEN66Core::deviceReset() {
 }
 
 String SEN66Core::getSerialNumber() {
+    // Non-critical operation - doesn't set ERROR state
     int8_t serialNumber[32] = {0};
     int16_t error = _sensor.getSerialNumber(serialNumber, 32);
     if (error != 0) {
-        setError("Failed to read serial number with error: " + String(error));
-        return "";
+        setError("[Hardware] Failed to read serial number with I2C error: 0x" + String(error, HEX));
+        return "";  // Return empty string, no state change
     }
     return String((const char*)serialNumber);
 }
 
 bool SEN66Core::readRawData(SEN66RawData &data) {
+    // Validation failure - must be in MEASURING state
     if (_state != SensorState::MEASURING) {
-        setError("Sensor not in measurement mode");
-        return false;
+        setError("[Validation] Cannot read data - sensor not in MEASURING state");
+        return false;  // No ERROR state - validation failure
     }
     
-    // Use the official Sensirion library to read all values
+    // Hardware communication - read all sensor values
     // This handles all I2C communication and CRC validation automatically
     float pm1_0, pm2_5, pm4_0, pm10;
     float humidity, temperature, vocIndex, noxIndex;
@@ -145,8 +149,8 @@ bool SEN66Core::readRawData(SEN66RawData &data) {
     );
     
     if (error != 0) {
-        setError("Failed to read sensor values, error code: " + String(error));
-        _state = SensorState::ERROR;
+        setError("[Hardware] Failed to read sensor values with I2C error: 0x" + String(error, HEX));
+        _state = SensorState::ERROR;  // Hardware failure - CRITICAL FIX
         return false;
     }
     
