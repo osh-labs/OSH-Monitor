@@ -1,0 +1,41 @@
+{
+  "name": "SEN66Core",
+  "version": "1.0.0",
+  "description": "Hardware abstraction library for Sensirion SEN66 air quality sensor with I2C communication, CRC validation, and environmental calculations",
+  "keywords": [
+    "sensor",
+    "air-quality",
+    "sen66",
+    "sensirion",
+    "particulate-matter",
+    "voc",
+    "nox",
+    "co2",
+    "environmental"
+  ],
+  "authors": [
+    {
+      "name": "Christopher Lee",
+      "url": "https://github.com/duluthmachineworks"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/duluthmachineworks/SEN66-Dosimetry.git"
+  },
+  "license": "GPL-3.0",
+  "homepage": "https://github.com/duluthmachineworks/SEN66-Dosimetry",
+  "frameworks": ["arduino"],
+  "platforms": ["espressif32"],
+  "dependencies": [
+    {
+      "name": "Sensirion I2C SEN66",
+      "version": "^0.1.0"
+    }
+  ],
+  "export": {
+    "include": [
+      "src"
+    ]
+  }
+}

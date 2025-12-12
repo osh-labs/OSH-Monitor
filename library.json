@@ -40,7 +40,10 @@
   },
   "dependencies": {
     "Wire": "*",
-    "LittleFS": "*"
+    "LittleFS": "*",
+    "TWACore": "^1.0.0",
+    "SEN66Core": "^1.0.0",
+    "Sensirion I2C SEN66": "^1.2.0"
   },
   "examples": [
     "examples/BasicLogger/BasicLogger.ino"

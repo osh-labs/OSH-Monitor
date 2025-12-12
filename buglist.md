@@ -64,5 +64,7 @@
 - ✅ The header of the downloaded CSV is corrupted
   - Fixed: Improved CSV capture filtering to reduce binary corruption. Header fallback removed to ensure filesystem corruption remains visible to users
 
-## New Bugs  
+## New Bugs  - Only fix if prompted
+- Garbage charachters in Esported TWA CSV - they are present at the mu symbol and superscript.
+- there is an excessive header row below the TWA data in the TWA csv
 

@@ -30,6 +30,7 @@ SEN66Dosimetry::SEN66Dosimetry(TwoWire &wire, uint16_t samplingInterval)
       _rtcInitialized(false),
       _lastSyncTime(0),
       _bootTime(0),
+      _sensor(nullptr),
       _pm1_fastTWA(nullptr),
       _pm2_5_fastTWA(nullptr),
       _pm4_fastTWA(nullptr),
@@ -48,16 +49,24 @@ SEN66Dosimetry::SEN66Dosimetry(TwoWire &wire, uint16_t samplingInterval)
 }
 
 SEN66Dosimetry::~SEN66Dosimetry() {
+    delete _sensor;
     cleanupFastTWA();
 }
 
 bool SEN66Dosimetry::begin(int sdaPin, int sclPin, uint32_t i2cFreq) {
-    // Initialize I2C
-    _wire.begin(sdaPin, sclPin);
-    _wire.setClock(i2cFreq);
+    // Initialize SEN66 sensor via library
+    _sensor = new SEN66Core(_wire);
+    if (!_sensor->begin(sdaPin, sclPin, i2cFreq)) {
+        Serial.println("Failed to initialize SEN66 sensor");
+        Serial.println("Error: " + _sensor->getLastError());
+        return false;
+    }
     
-    // Initialize Sensirion SEN66 sensor library
-    _sensor.begin(_wire, SEN66_I2C_ADDR_6B);
+    // Display serial number
+    String serialNum = _sensor->getSerialNumber();
+    if (serialNum.length() > 0) {
+        Serial.println("SEN66 Serial Number: " + serialNum);
+    }
     
     // Initialize LittleFS
     if (!LittleFS.begin(true)) {
@@ -76,100 +85,64 @@ bool SEN66Dosimetry::begin(int sdaPin, int sclPin, uint32_t i2cFreq) {
     
     // FastTWA already initialized in constructor
     
-    // Reset the device
-    int16_t error = _sensor.deviceReset();
-    if (error != 0) {
-        Serial.printf("[ERROR] Device reset failed with error: %d\n", error);
-        return false;
-    }
-    Serial.println("SEN66 reset successful!");
-    
-    // Wait after reset
-    delay(1200);
-    
-    // Get serial number for verification
-    int8_t serialNumber[32] = {0};
-    error = _sensor.getSerialNumber(serialNumber, 32);
-    if (error == 0) {
-        Serial.print("SEN66 Serial Number: ");
-        Serial.println((const char*)serialNumber);
-    }
-    
-    // Start measurement
-    if (!startMeasurement()) {
-        Serial.println("Failed to start SEN66 measurement");
-        return false;
-    }
-    
-    // Wait for sensor to stabilize
-    Serial.println("Waiting for sensor to warm up (first measurements available in ~2 seconds)...");
-    delay(2000);
     Serial.println("Sensor ready!");
-    
     return true;
 }
 
 bool SEN66Dosimetry::startMeasurement() {
-    int16_t error = _sensor.startContinuousMeasurement();
-    if (error != 0) {
-        Serial.printf("[ERROR] Start measurement failed with error: %d\n", error);
+    if (!_sensor || !_sensor->startMeasurement()) {
+        Serial.println("[ERROR] Start measurement failed");
+        if (_sensor) {
+            Serial.println("Error: " + _sensor->getLastError());
+        }
         return false;
     }
     return true;
 }
 
 bool SEN66Dosimetry::stopMeasurement() {
-    int16_t error = _sensor.stopMeasurement();
-    if (error != 0) {
-        Serial.printf("[ERROR] Stop measurement failed with error: %d\n", error);
+    if (!_sensor || !_sensor->stopMeasurement()) {
+        Serial.println("[ERROR] Stop measurement failed");
+        if (_sensor) {
+            Serial.println("Error: " + _sensor->getLastError());
+        }
         return false;
     }
-    return true;
-}
-
-bool SEN66Dosimetry::readMeasuredValues() {
-    // Use the official Sensirion library to read all values
-    // This handles all I2C communication and CRC validation automatically
-    float pm1_0, pm2_5, pm4_0, pm10;
-    float humidity, temperature, vocIndex, noxIndex;
-    uint16_t co2;
-    
-    int16_t error = _sensor.readMeasuredValues(
-        pm1_0, pm2_5, pm4_0, pm10,
-        humidity, temperature, vocIndex, noxIndex, co2
-    );
-    
-    if (error != 0) {
-        Serial.printf("[ERROR] Failed to read sensor values, error code: %d\n", error);
-        return false;
-    }
-    
-    // Store values in current data structure
-    _currentData.pm1_0 = pm1_0;
-    _currentData.pm2_5 = pm2_5;
-    _currentData.pm4_0 = pm4_0;
-    _currentData.pm10 = pm10;
-    _currentData.humidity = humidity;
-    _currentData.temperature = temperature;
-    _currentData.vocIndex = vocIndex;
-    _currentData.noxIndex = noxIndex;
-    _currentData.co2 = co2;
-    
-    // Calculate timestamp: use RTC time if available, otherwise fallback to legacy method
-    _currentData.timestamp = getCurrentTimestamp();
-    
     return true;
 }
 
 bool SEN66Dosimetry::readSensor() {
-    if (!readMeasuredValues()) {
+    if (!_sensor) {
+        Serial.println("[ERROR] Sensor not initialized");
         return false;
     }
     
-    // Calculate derived environmental metrics
-    _currentData.dewPoint = calculateDewPoint(_currentData.temperature, _currentData.humidity);
-    _currentData.heatIndex = calculateHeatIndex(_currentData.temperature, _currentData.humidity);
-    _currentData.absoluteHumidity = calculateAbsoluteHumidity(_currentData.temperature, _currentData.humidity);
+    // Read full sensor data (raw + derived) from SEN66Core
+    SEN66FullData sensorData;
+    if (!_sensor->readFullData(sensorData)) {
+        Serial.println("[ERROR] Failed to read sensor data");
+        Serial.println("Error: " + _sensor->getLastError());
+        return false;
+    }
+    
+    // Copy raw data to platform data structure
+    _currentData.temperature = sensorData.raw.temperature;
+    _currentData.humidity = sensorData.raw.humidity;
+    _currentData.vocIndex = sensorData.raw.vocIndex;
+    _currentData.noxIndex = sensorData.raw.noxIndex;
+    _currentData.pm1_0 = sensorData.raw.pm1_0;
+    _currentData.pm2_5 = sensorData.raw.pm2_5;
+    _currentData.pm4_0 = sensorData.raw.pm4_0;
+    _currentData.pm10 = sensorData.raw.pm10;
+    _currentData.co2 = sensorData.raw.co2;
+    
+    // Copy derived environmental metrics
+    _currentData.dewPoint = sensorData.derived.dewPoint;
+    _currentData.heatIndex = sensorData.derived.heatIndex;
+    _currentData.absoluteHumidity = sensorData.derived.absoluteHumidity;
+    
+    // Add platform timestamp
+    _currentData.timestamp = getCurrentTimestamp();
     
     return true;
 }
@@ -221,50 +194,7 @@ void SEN66Dosimetry::updateTWA(SensorData &data) {
     }
 }
 
-float SEN66Dosimetry::calculateDewPoint(float temp, float humidity) {
-    // Magnus formula for dew point calculation
-    const float a = 17.27;
-    const float b = 237.7;
-    
-    float alpha = ((a * temp) / (b + temp)) + log(humidity / 100.0);
-    float dewPoint = (b * alpha) / (a - alpha);
-    
-    return dewPoint;
-}
-
-float SEN66Dosimetry::calculateHeatIndex(float temp, float humidity) {
-    // Convert to Fahrenheit for NOAA formula
-    float tempF = temp * 9.0 / 5.0 + 32.0;
-    
-    // Simple formula for low temperatures
-    if (tempF < 80.0) {
-        return temp;  // Heat index not applicable
-    }
-    
-    // Steadman formula (simplified)
-    float hi = -42.379 + 2.04901523 * tempF + 10.14333127 * humidity
-               - 0.22475541 * tempF * humidity - 0.00683783 * tempF * tempF
-               - 0.05481717 * humidity * humidity + 0.00122874 * tempF * tempF * humidity
-               + 0.00085282 * tempF * humidity * humidity - 0.00000199 * tempF * tempF * humidity * humidity;
-    
-    // Convert back to Celsius
-    return (hi - 32.0) * 5.0 / 9.0;
-}
-
-float SEN66Dosimetry::calculateAbsoluteHumidity(float temp, float humidity) {
-    // Absolute humidity in g/m³
-    // Using Magnus-Tetens approximation
-    const float molarMass = 18.01528;  // g/mol for water
-    const float gasConstant = 8.31446;  // J/(mol·K)
-    
-    float tempK = temp + 273.15;
-    float saturationVaporPressure = 6.112 * exp((17.67 * temp) / (temp + 243.5)) * 100;  // Pa
-    float vaporPressure = (humidity / 100.0) * saturationVaporPressure;
-    
-    float absoluteHumidity = (vaporPressure * molarMass) / (gasConstant * tempK);
-    
-    return absoluteHumidity;
-}
+// Environmental calculation methods moved to SEN66Core library
 
 bool SEN66Dosimetry::ensureLogFileExists() {
     if (!LittleFS.exists(_logFilePath)) {

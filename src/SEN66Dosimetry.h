@@ -27,7 +27,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <LittleFS.h>
-#include <SensirionI2cSen66.h>
+#include <SEN66Core.h>
 #include <Preferences.h>
 #include <vector>
 #include <map>
@@ -409,15 +409,10 @@ private:
     FastTWA* _pm4_fastTWA;
     FastTWA* _pm10_fastTWA;
     TWAExportResult _lastTWAExport;
-    SensirionI2cSen66 _sensor;
+    SEN66Core* _sensor;
 
     // Internal helper methods
-    bool readMeasuredValues();
-    
-    // Environmental calculation methods
-    float calculateDewPoint(float temp, float humidity);
-    float calculateHeatIndex(float temp, float humidity);
-    float calculateAbsoluteHumidity(float temp, float humidity);
+    // Sensor reading now handled by SEN66Core library
     
     // TWA calculation helpers
     void initializeFastTWA();
