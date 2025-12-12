@@ -477,8 +477,17 @@ void handleSerialCommands() {
                 Serial.printf("📈 Data Coverage: %.1f hours\n", twa.dataCoverageHours);
                 Serial.printf("🏭 OSHA Compliant: %s\n", 
                              twa.oshaCompliant ? "YES (≥8 hours)" : "NO (< 8 hours - insufficient data)");
-                Serial.printf("📋 PM2.5 8-hr TWA: %.3f µg/m³\n", twa.twa_pm2_5);
-                Serial.printf("📋 PM10 8-hr TWA: %.3f µg/m³\n", twa.twa_pm10);
+                
+                // Access TWA values from map
+                auto it_pm25 = twa.parameterTWAs.find("pm2_5");
+                auto it_pm10 = twa.parameterTWAs.find("pm10");
+                if (it_pm25 != twa.parameterTWAs.end()) {
+                    Serial.printf("📋 PM2.5 8-hr TWA: %.3f µg/m³\n", it_pm25->second);
+                }
+                if (it_pm10 != twa.parameterTWAs.end()) {
+                    Serial.printf("📋 PM10 8-hr TWA: %.3f µg/m³\n", it_pm10->second);
+                }
+                
                 Serial.printf("📁 Export file: /twa_export.csv\n");
                 Serial.printf("📊 Samples analyzed: %lu\n", twa.samplesAnalyzed);
                 if (twa.dataGaps > 0) {

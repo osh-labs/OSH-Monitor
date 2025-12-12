@@ -1,0 +1,39 @@
+{
+  "name": "TWACore",
+  "version": "1.0.0",
+  "description": "OSHA-compliant Time-Weighted Average calculations for environmental monitoring and industrial dosimetry. Supports real-time circular buffer TWA and post-processing regulatory compliance calculations.",
+  "keywords": [
+    "TWA",
+    "time-weighted-average",
+    "OSHA",
+    "dosimetry",
+    "environmental-monitoring",
+    "particulate-matter",
+    "regulatory-compliance",
+    "industrial-hygiene",
+    "air-quality"
+  ],
+  "authors": [
+    {
+      "name": "Christopher Lee",
+      "maintainer": true
+    }
+  ],
+  "license": "GPL-3.0",
+  "homepage": "https://github.com/duluthmachineworks/SEN66-Dosimetry",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/duluthmachineworks/SEN66-Dosimetry.git"
+  },
+  "frameworks": "arduino",
+  "platforms": "*",
+  "headers": "TWACore.h",
+  "export": {
+    "include": [
+      "src/*",
+      "examples/*",
+      "*.json",
+      "*.md"
+    ]
+  }
+}

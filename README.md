@@ -367,6 +367,93 @@ python sen66_cli.py monitor
 - **Sample Integrity**: Validates data completeness
 - **Compliance Reporting**: Clear pass/fail determination
 
+## TWACore Library Architecture
+
+### Sensor-Agnostic Design Philosophy
+
+The TWA calculation system has been extracted into a standalone, reusable library called **TWACore**, located in `lib/TWACore/`. This architecture enables OSHA-compliant time-weighted average calculations for any environmental monitoring application, not just particulate matter.
+
+### Library Structure
+
+```
+lib/TWACore/
+├── library.json              # PlatformIO library metadata
+├── src/
+│   ├── TWACore.h             # Generic TWA API definitions
+│   └── TWACore.cpp           # Platform-agnostic implementation
+└── examples/
+    └── GenericTWA/
+        └── GenericTWA.ino    # 2-parameter example (temp/humidity)
+```
+
+### Key Features
+
+#### Generic Map-Based API
+TWACore uses `std::map<String, float>` to support arbitrary numbers of parameters:
+```cpp
+TWAExportResult result = exportTWA.calculateTWA();
+for (const auto& param : result.parameterTWAs) {
+    Serial.printf("%s TWA: %.2f\n", param.first.c_str(), param.second);
+}
+```
+
+#### Dynamic CSV Column Mapping
+Automatic header row scanning adapts to any CSV format:
+- Detects parameter columns by name matching
+- Handles arbitrary metadata columns
+- Requires only `timestamp` column and registered parameters
+
+#### Template Method Pattern
+Extensible design for custom export formats:
+- Override `writeExportHeader()` for custom headers
+- Override `writeExportFooter()` for additional metadata
+- Core calculation logic remains unchanged
+
+### Reusability Examples
+
+TWACore can be adapted for various monitoring applications:
+
+**VOC/NOx Monitoring**:
+```cpp
+std::vector<String> params = {"vocIndex", "noxIndex"};
+ExportTWA exportTWA("log.csv", params, 30);
+```
+
+**Noise Dosimetry**:
+```cpp
+std::vector<String> params = {"soundLevel_dBA"};
+ExportTWA exportTWA("noise_log.csv", params, 1);
+```
+
+**Multi-Gas Detection**:
+```cpp
+std::vector<String> params = {"CO_ppm", "CO2_ppm", "H2S_ppm", "CH4_ppm"};
+ExportTWA exportTWA("gas_log.csv", params, 60);
+```
+
+**Radiation Monitoring**:
+```cpp
+std::vector<String> params = {"dose_uSv", "rate_uSv_h"};
+ExportTWA exportTWA("radiation_log.csv", params, 300);
+```
+
+### Integration with SEN66Dosimetry
+
+The SEN66Dosimetry library instantiates TWACore with particulate matter parameters:
+```cpp
+std::vector<String> pmParams = {"pm1_0", "pm2_5", "pm4_0", "pm10"};
+ExportTWA exportTWA(_logFilePath, pmParams, _samplingInterval);
+```
+
+This approach maintains backward compatibility while enabling the TWA system to be reused in entirely different projects.
+
+### License & Dependencies
+
+- **License**: GPLv3 (same as parent project)
+- **Framework**: Arduino (portable to ESP32, ESP8266, STM32, etc.)
+- **Dependencies**: Standard C++ library (`<vector>`, `<map>`)
+- **Version**: 1.0.0 (independently versioned from firmware)
+
 ## Examples
 
 See the `examples/` directory for complete examples:

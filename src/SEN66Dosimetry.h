@@ -33,6 +33,7 @@
 #include <map>
 #include <time.h>
 #include <sys/time.h>
+#include <TWACore.h>
 
 // Default sampling interval (seconds) for TWA calculations
 #define DEFAULT_SAMPLING_INTERVAL 60
@@ -54,26 +55,7 @@ enum TimeSource {
     TIME_SOURCE_UPTIME,        // Fallback uptime (millis/1000)
     TIME_SOURCE_INVALID        // No valid time source
 };
-
-/**
- * @brief TWA Export Result structure for regulatory compliance
- */
-struct TWAExportResult {
-    float twa_pm1_0;               // 8-hour TWA PM1.0 µg/m³
-    float twa_pm2_5;               // 8-hour TWA PM2.5 µg/m³
-    float twa_pm4_0;               // 8-hour TWA PM4.0 µg/m³
-    float twa_pm10;                // 8-hour TWA PM10 µg/m³
-    float dataCoverageHours;       // Hours of data analyzed
-    bool oshaCompliant;            // true if >= 8 hours of data
-    unsigned long samplesAnalyzed; // Number of samples processed
-    unsigned long dataGaps;        // Number of data gaps detected
-    String exportStartTime;        // Start time of export period (local time)
-    String exportEndTime;          // End time of export period (local time)
-};
-
-// Forward declarations for TWA calculation classes
-class FastTWA;
-class ExportTWA;
+// TWAExportResult and TWA classes now provided by TWACore library
 
 /**
  * @brief Configuration structure for sensor operation
@@ -456,60 +438,5 @@ private:
     void saveMetadata();
 };
 
-/**
- * @brief Fast TWA calculator for real-time estimates
- * Uses dynamic circular buffer that adapts to measurement intervals
- */
-class FastTWA {
-public:
-    FastTWA(uint16_t samplingInterval);
-    ~FastTWA();
-    
-    void updateSamplingInterval(uint16_t newInterval);
-    void addSample(float value);
-    float getCurrentTWA() const;
-    bool hasValidTWA() const;
-    
-private:
-    std::vector<float> _buffer;
-    size_t _bufferSize;
-    size_t _bufferIndex;
-    bool _bufferFull;
-    float _sum;
-    uint16_t _samplingInterval;
-    
-    void calculateBufferSize();
-};
-
-/**
- * @brief Export TWA calculator for OSHA-compliant regulatory reporting
- * Processes complete CSV datasets for accurate time-weighted calculations
- */
-class ExportTWA {
-public:
-    static TWAExportResult calculateFromCSV(
-        const String &csvData, 
-        int16_t utcOffset,
-        unsigned long exportStart = 0,  // 0 = use all data
-        unsigned long exportEnd = 0     // 0 = use all data
-    );
-    
-private:
-    struct DataPoint {
-        unsigned long timestamp;
-        float pm1_0;
-        float pm2_5;
-        float pm4_0;
-        float pm10;
-    };
-    
-    static bool parseDataPoints(const String &csvData, std::vector<DataPoint> &points);
-    static float calculateWeightedAverage(const std::vector<DataPoint> &points, 
-                                          const String &parameter,
-                                          unsigned long periodStart, 
-                                          unsigned long periodEnd,
-                                          unsigned long &gaps);
-    static String formatLocalTime(unsigned long timestamp, int16_t utcOffset);
-};
 
 #endif // SEN66_DOSIMETRY_H

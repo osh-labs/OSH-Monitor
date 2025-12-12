@@ -584,7 +584,7 @@ void SEN66Dosimetry::loadMetadata() {
     }
     
     if (_metadata.find("firmware_version") == _metadata.end()) {
-        _metadata["firmware_version"] = "1.0.0";
+        _metadata["firmware_version"] = "1.0.5";
     }
     
     if (_metadata.find("session_start") == _metadata.end() || _metadata["session_start"].length() == 0) {
@@ -717,8 +717,12 @@ bool SEN66Dosimetry::exportCSVWithTWA(const String &filename) {
     String csvData = logFile.readString();
     logFile.close();
     
+    // Create ExportTWA instance with PM parameters
+    std::vector<String> pmParameters = {"pm1_0", "pm2_5", "pm4_0", "pm10"};
+    ExportTWA twaCalculator(_config.samplingInterval, pmParameters, _config.utcOffset);
+    
     // Calculate TWA using ExportTWA
-    _lastTWAExport = ExportTWA::calculateFromCSV(csvData, _config.utcOffset);
+    _lastTWAExport = twaCalculator.calculateFromCSV(csvData);
     
     // Create export file
     File exportFile = LittleFS.open(filename, "w");
@@ -857,10 +861,26 @@ bool SEN66Dosimetry::writeExportHeader(File &file) {
     file.println("# ========== TWA CALCULATION RESULTS ==========");
     file.printf("# Data Coverage: %.1f hours\n", _lastTWAExport.dataCoverageHours);
     file.printf("# OSHA Compliant: %s\n", _lastTWAExport.oshaCompliant ? "YES (≥8 hours)" : "NO (< 8 hours - insufficient data)");
-    file.printf("# PM1.0 8-hr TWA: %.3f µg/m³\n", _lastTWAExport.twa_pm1_0);
-    file.printf("# PM2.5 8-hr TWA: %.3f µg/m³\n", _lastTWAExport.twa_pm2_5);
-    file.printf("# PM4.0 8-hr TWA: %.3f µg/m³\n", _lastTWAExport.twa_pm4_0);
-    file.printf("# PM10 8-hr TWA: %.3f µg/m³\n", _lastTWAExport.twa_pm10);
+    
+    // Access TWA values from map
+    auto it_pm1 = _lastTWAExport.parameterTWAs.find("pm1_0");
+    auto it_pm25 = _lastTWAExport.parameterTWAs.find("pm2_5");
+    auto it_pm4 = _lastTWAExport.parameterTWAs.find("pm4_0");
+    auto it_pm10 = _lastTWAExport.parameterTWAs.find("pm10");
+    
+    if (it_pm1 != _lastTWAExport.parameterTWAs.end()) {
+        file.printf("# PM1.0 8-hr TWA: %.3f µg/m³\n", it_pm1->second);
+    }
+    if (it_pm25 != _lastTWAExport.parameterTWAs.end()) {
+        file.printf("# PM2.5 8-hr TWA: %.3f µg/m³\n", it_pm25->second);
+    }
+    if (it_pm4 != _lastTWAExport.parameterTWAs.end()) {
+        file.printf("# PM4.0 8-hr TWA: %.3f µg/m³\n", it_pm4->second);
+    }
+    if (it_pm10 != _lastTWAExport.parameterTWAs.end()) {
+        file.printf("# PM10 8-hr TWA: %.3f µg/m³\n", it_pm10->second);
+    }
+    
     file.printf("# Samples Analyzed: %lu\n", _lastTWAExport.samplesAnalyzed);
     file.printf("# Data Gaps Detected: %lu\n", _lastTWAExport.dataGaps);
     if (_lastTWAExport.dataCoverageHours < MIN_OSHA_HOURS) {
@@ -875,237 +895,8 @@ bool SEN66Dosimetry::writeExportHeader(File &file) {
 }
 
 // ===============================================================================
-// FastTWA Implementation - Dynamic circular buffer for real-time TWA estimates
+// TWA implementations now provided by TWACore library
 // ===============================================================================
-
-FastTWA::FastTWA(uint16_t samplingInterval) 
-    : _samplingInterval(samplingInterval), _bufferIndex(0), _bufferFull(false), _sum(0.0f) {
-    calculateBufferSize();
-    _buffer.reserve(_bufferSize);
-}
-
-FastTWA::~FastTWA() {
-    // std::vector automatically cleans up
-}
-
-void FastTWA::calculateBufferSize() {
-    _bufferSize = TWA_WINDOW_SECONDS / _samplingInterval;
-    // Ensure minimum buffer size for meaningful TWA
-    if (_bufferSize < 10) _bufferSize = 10;
-}
-
-void FastTWA::updateSamplingInterval(uint16_t newInterval) {
-    _samplingInterval = newInterval;
-    size_t oldSize = _bufferSize;
-    calculateBufferSize();
-    
-    if (_bufferSize != oldSize) {
-        // Resize buffer, keeping most recent data
-        std::vector<float> newBuffer;
-        newBuffer.reserve(_bufferSize);
-        
-        if (_bufferFull && !_buffer.empty()) {
-            // Copy from current index (oldest) to end, then from start to current index
-            size_t keepCount = std::min(_bufferSize, _buffer.size());
-            for (size_t i = 0; i < keepCount; i++) {
-                size_t srcIndex = (_bufferIndex + _buffer.size() - keepCount + i) % _buffer.size();
-                newBuffer.push_back(_buffer[srcIndex]);
-            }
-        } else if (!_buffer.empty()) {
-            // Not full yet, just copy what we have
-            size_t keepCount = std::min(_bufferSize, _buffer.size());
-            for (size_t i = 0; i < keepCount; i++) {
-                newBuffer.push_back(_buffer[i]);
-            }
-        }
-        
-        _buffer = std::move(newBuffer);
-        _bufferIndex = 0;
-        _bufferFull = (_buffer.size() >= _bufferSize);
-        
-        // Recalculate sum
-        _sum = 0.0f;
-        for (float value : _buffer) {
-            _sum += value;
-        }
-    }
-}
-
-void FastTWA::addSample(float value) {
-    if (_bufferFull) {
-        // Remove old value from sum, add new value
-        _sum = _sum - _buffer[_bufferIndex] + value;
-        _buffer[_bufferIndex] = value;
-        _bufferIndex = (_bufferIndex + 1) % _bufferSize;
-    } else {
-        // Still filling buffer
-        _buffer.push_back(value);
-        _sum += value;
-        if (_buffer.size() >= _bufferSize) {
-            _bufferFull = true;
-        }
-    }
-}
-
-float FastTWA::getCurrentTWA() const {
-    if (_buffer.empty()) return 0.0f;
-    return _sum / _buffer.size();
-}
-
-bool FastTWA::hasValidTWA() const {
-    return _bufferFull; // Only consider valid when buffer is full (8 hours of data)
-}
-
-// ===============================================================================
-// ExportTWA Implementation - OSHA-compliant regulatory TWA calculations
-// ===============================================================================
-
-TWAExportResult ExportTWA::calculateFromCSV(const String &csvData, int16_t utcOffset,
-                                        unsigned long exportStart, unsigned long exportEnd) {
-    TWAExportResult result = {};
-    
-    std::vector<DataPoint> dataPoints;
-    if (!parseDataPoints(csvData, dataPoints)) {
-        return result; // Return empty result on parse failure
-    }
-    
-    if (dataPoints.empty()) {
-        return result;
-    }
-    
-    // Determine period bounds - ensure chronological order
-    unsigned long firstTimestamp = dataPoints[0].timestamp;
-    unsigned long lastTimestamp = dataPoints.back().timestamp;
-    
-    // Find the actual min and max timestamps in case data isn't chronologically ordered
-    unsigned long minTimestamp = firstTimestamp;
-    unsigned long maxTimestamp = lastTimestamp;
-    for (const auto &point : dataPoints) {
-        if (point.timestamp < minTimestamp) minTimestamp = point.timestamp;
-        if (point.timestamp > maxTimestamp) maxTimestamp = point.timestamp;
-    }
-    
-    unsigned long periodStart = (exportStart == 0) ? minTimestamp : exportStart;
-    unsigned long periodEnd = (exportEnd == 0) ? maxTimestamp : exportEnd;
-    
-    // Calculate TWAs for each parameter
-    unsigned long gaps_pm1 = 0, gaps_pm2_5 = 0, gaps_pm4 = 0, gaps_pm10 = 0;
-    
-    result.twa_pm1_0 = calculateWeightedAverage(dataPoints, "pm1_0", periodStart, periodEnd, gaps_pm1);
-    result.twa_pm2_5 = calculateWeightedAverage(dataPoints, "pm2_5", periodStart, periodEnd, gaps_pm2_5);
-    result.twa_pm4_0 = calculateWeightedAverage(dataPoints, "pm4_0", periodStart, periodEnd, gaps_pm4);
-    result.twa_pm10 = calculateWeightedAverage(dataPoints, "pm10", periodStart, periodEnd, gaps_pm10);
-    
-    // Calculate coverage and compliance
-    result.dataCoverageHours = (periodEnd - periodStart) / 3600.0f;
-    result.oshaCompliant = (result.dataCoverageHours >= MIN_OSHA_HOURS);
-    result.samplesAnalyzed = dataPoints.size();
-    result.dataGaps = (gaps_pm1 + gaps_pm2_5 + gaps_pm4 + gaps_pm10) / 4; // Average gaps
-    
-    result.exportStartTime = ExportTWA::formatLocalTime(periodStart, utcOffset);
-    result.exportEndTime = ExportTWA::formatLocalTime(periodEnd, utcOffset);
-    
-    return result;
-}
-
-bool ExportTWA::parseDataPoints(const String &csvData, std::vector<DataPoint> &points) {
-    points.clear();
-    
-    int lineStart = 0;
-    int lineEnd = csvData.indexOf('\n');
-    int lineCount = 0;
-    
-    while (lineEnd != -1) {
-        String line = csvData.substring(lineStart, lineEnd);
-        line.trim();
-        lineCount++;
-        
-        // Skip header line and comments
-        if (line.startsWith("timestamp") || line.startsWith("#") || line.length() == 0) {
-            lineStart = lineEnd + 1;
-            lineEnd = csvData.indexOf('\n', lineStart);
-            continue;
-        }
-        
-        // Parse CSV fields
-        DataPoint point = {};
-        int commaCount = 0;
-        int lastIndex = 0;
-        
-        for (int i = 0; i <= line.length(); i++) {
-            if (i == line.length() || line.charAt(i) == ',') {
-                String field = line.substring(lastIndex, i);
-                field.trim();
-                
-                switch (commaCount) {
-                    case 0: point.timestamp = field.toInt(); break;
-                    case 2: point.pm1_0 = field.toFloat(); break;
-                    case 3: point.pm2_5 = field.toFloat(); break;
-                    case 4: point.pm4_0 = field.toFloat(); break;
-                    case 5: point.pm10 = field.toFloat(); break;
-                }
-                
-                commaCount++;
-                lastIndex = i + 1;
-            }
-        }
-        
-        if (commaCount >= 6) { // Valid line with enough fields
-            points.push_back(point);
-        }
-        
-        lineStart = lineEnd + 1;
-        lineEnd = csvData.indexOf('\n', lineStart);
-    }
-    
-    return !points.empty();
-}
-
-float ExportTWA::calculateWeightedAverage(const std::vector<DataPoint> &points, const String &parameter,
-                                          unsigned long periodStart, unsigned long periodEnd, unsigned long &gaps) {
-    if (points.empty()) return 0.0f;
-    
-    float weightedSum = 0.0f;
-    unsigned long totalTime = 0;
-    gaps = 0;
-    
-    for (size_t i = 0; i < points.size() - 1; i++) {
-        const DataPoint &current = points[i];
-        const DataPoint &next = points[i + 1];
-        
-        // Skip if outside period
-        if (current.timestamp < periodStart || current.timestamp >= periodEnd) continue;
-        
-        unsigned long duration = next.timestamp - current.timestamp;
-        
-        // Check for data gaps (> 120 seconds for typical 60s intervals)
-        if (duration > 120) {
-            gaps++;
-        }
-        
-        float value = 0.0f;
-        if (parameter == "pm1_0") value = current.pm1_0;
-        else if (parameter == "pm2_5") value = current.pm2_5;
-        else if (parameter == "pm4_0") value = current.pm4_0;
-        else if (parameter == "pm10") value = current.pm10;
-        
-        weightedSum += value * duration;
-        totalTime += duration;
-    }
-    
-    return (totalTime > 0) ? weightedSum / totalTime : 0.0f;
-}
-
-String ExportTWA::formatLocalTime(unsigned long timestamp, int16_t utcOffset) {
-    timestamp += (utcOffset * 3600); // Apply UTC offset
-    
-    time_t t = timestamp;
-    struct tm *timeInfo = gmtime(&t);
-    
-    char buffer[32];
-    strftime(buffer, sizeof(buffer), "%Y-%m-%d_%H:%M:%S", timeInfo);
-    return String(buffer);
-}
 
 // ============ RTC Implementation Functions ============
 
