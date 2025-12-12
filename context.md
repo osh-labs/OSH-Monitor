@@ -1,11 +1,11 @@
-SEN66-Dosimetry Project Context
+OSH-Monitor Project Context
 
 Open-Source Arduino/PlatformIO Library for ESP32-S3
 Advanced Air-Quality Acquisition, Dosimetry, and CSV Logging for the Sensirion SEN66
 
 1. Overview
 
-SEN66-Dosimetry is an open-source PlatformIO/Arduino library for ESP32-S3 devices, providing high-integrity sensor acquisition, derived environmental calculations, particulate dosimetry, and CSV data logging for the Sensirion SEN66 air-quality module.
+OSH-Monitor is an open-source PlatformIO/Arduino library for ESP32-S3 devices, providing high-integrity sensor acquisition, derived environmental calculations, particulate dosimetry, and CSV data logging for the Sensirion SEN66 air-quality module.
 
 The library is headless and provides no display/UI components. Its purpose is to serve as a robust sensor-data and exposure-analysis engine for long-duration environmental monitoring.
 
@@ -44,7 +44,7 @@ Compatible with other ESP32 variants that support LittleFS
 
 4. Raw Sensor Data Supported
 
-The SEN66-Dosimetry library must read and validate the following SEN66 measurements:
+The OSH-Monitor library must read and validate the following SEN66 measurements:
 
 Temperature
 
@@ -185,11 +185,11 @@ Predictable, memory-efficient behavior
 All heavy operations isolated from the main acquisition loop
 
 10. Repository Structure (Proposed)
-SEN66-Dosimetry/
+OSH-Monitor/
 │
 ├── src/
-│   ├── SEN66Dosimetry.cpp
-│   └── SEN66Dosimetry.h
+│   ├── OSHMonitor.cpp
+│   └── OSHMonitor.h
 │
 ├── examples/
 │   └── BasicLogger/
@@ -208,7 +208,7 @@ SEN66-Dosimetry/
 
 A library.json file will define:
 
-Name: SEN66-Dosimetry
+Name: OSH-Monitor
 
 Frameworks: Arduino
 
@@ -244,4 +244,4 @@ CO₂ trend analytics
 
 13. Summary
 
-SEN66-Dosimetry is a standalone, headless, extensible air-quality measurement and dosimetry library for ESP32-S3 systems. It integrates SEN66 sensor acquisition, environmental math, long-term particulate exposure tracking, and reliable on-device CSV logging into a single, cohesive module designed for long-duration operation and platform-level reusability.
+OSH-Monitor is a standalone, headless, extensible air-quality measurement and dosimetry library for ESP32-S3 systems. It integrates SEN66 sensor acquisition, environmental math, long-term particulate exposure tracking, and reliable on-device CSV logging into a single, cohesive module designed for long-duration operation and platform-level reusability.

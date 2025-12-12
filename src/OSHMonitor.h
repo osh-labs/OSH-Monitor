@@ -1,11 +1,11 @@
 /**
  * ===============================================================================
- * SEN66Dosimetry.h
+ * OSHMonitor.h
  * 
- * Open-Source Arduino/PlatformIO Library for ESP32-S3
- * Advanced Air-Quality Acquisition, Dosimetry, and CSV Logging for the Sensirion SEN66
+ * Open-Source Occupational Safety & Health Monitoring Platform for ESP32-S3
+ * Sensor-agnostic platform for environmental monitoring, dosimetry, and compliance logging
  * 
- * Project: SEN66-Dosimetry
+ * Project: OSH-Monitor
  * Creator: Christopher Lee
  * License: GNU General Public License v3.0 (GPLv3)
  * 
@@ -21,8 +21,8 @@
  * ===============================================================================
  */
 
-#ifndef SEN66_DOSIMETRY_H
-#define SEN66_DOSIMETRY_H
+#ifndef OSH_MONITOR_H
+#define OSH_MONITOR_H
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -98,21 +98,22 @@ struct SensorData {
 };
 
 /**
- * @brief Main class for SEN66 sensor acquisition, dosimetry, and logging
+ * @brief Platform orchestration class for environmental monitoring and dosimetry
+ * Sensor-agnostic design supports multiple sensor types via hardware abstraction libraries
  */
-class SEN66Dosimetry {
+class OSHMonitor {
 public:
     /**
      * @brief Constructor
      * @param wire I2C bus reference (default Wire)
      * @param samplingInterval Sampling interval in seconds for TWA calculations
      */
-    SEN66Dosimetry(TwoWire &wire = Wire, uint16_t samplingInterval = DEFAULT_SAMPLING_INTERVAL);
+    OSHMonitor(TwoWire &wire = Wire, uint16_t samplingInterval = DEFAULT_SAMPLING_INTERVAL);
     
     /**
      * @brief Destructor - cleanup FastTWA instances
      */
-    ~SEN66Dosimetry();
+    ~OSHMonitor();
 
     /**
      * @brief Initialize the library, sensor, and filesystem
@@ -434,4 +435,4 @@ private:
 };
 
 
-#endif // SEN66_DOSIMETRY_H
+#endif // OSH_MONITOR_H

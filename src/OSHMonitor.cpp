@@ -1,10 +1,10 @@
 /**
  * ===============================================================================
- * SEN66Dosimetry.cpp
+ * OSHMonitor.cpp
  * 
- * Implementation of SEN66 air quality sensor library with dosimetry and logging
+ * Implementation of OSH-Monitor platform for environmental monitoring and dosimetry
  * 
- * Project: SEN66-Dosimetry
+ * Project: OSH-Monitor
  * Creator: Christopher Lee
  * License: GNU General Public License v3.0 (GPLv3)
  * 
@@ -20,10 +20,10 @@
  * ===============================================================================
  */
 
-#include "SEN66Dosimetry.h"
+#include "OSHMonitor.h"
 #include <math.h>
 
-SEN66Dosimetry::SEN66Dosimetry(TwoWire &wire, uint16_t samplingInterval)
+OSHMonitor::OSHMonitor(TwoWire &wire, uint16_t samplingInterval)
     : _wire(wire), 
       _samplingInterval(samplingInterval),
       _logFilePath("/sensor_log.csv"),
@@ -48,12 +48,12 @@ SEN66Dosimetry::SEN66Dosimetry(TwoWire &wire, uint16_t samplingInterval)
     initializeFastTWA();
 }
 
-SEN66Dosimetry::~SEN66Dosimetry() {
+OSHMonitor::~OSHMonitor() {
     delete _sensor;
     cleanupFastTWA();
 }
 
-bool SEN66Dosimetry::begin(int sdaPin, int sclPin, uint32_t i2cFreq) {
+bool OSHMonitor::begin(int sdaPin, int sclPin, uint32_t i2cFreq) {
     // Initialize SEN66 sensor via library
     _sensor = new SEN66Core(_wire);
     if (!_sensor->begin(sdaPin, sclPin, i2cFreq)) {
@@ -89,7 +89,7 @@ bool SEN66Dosimetry::begin(int sdaPin, int sclPin, uint32_t i2cFreq) {
     return true;
 }
 
-bool SEN66Dosimetry::startMeasurement() {
+bool OSHMonitor::startMeasurement() {
     if (!_sensor || !_sensor->startMeasurement()) {
         Serial.println("[ERROR] Start measurement failed");
         if (_sensor) {
@@ -100,7 +100,7 @@ bool SEN66Dosimetry::startMeasurement() {
     return true;
 }
 
-bool SEN66Dosimetry::stopMeasurement() {
+bool OSHMonitor::stopMeasurement() {
     if (!_sensor || !_sensor->stopMeasurement()) {
         Serial.println("[ERROR] Stop measurement failed");
         if (_sensor) {
@@ -111,7 +111,7 @@ bool SEN66Dosimetry::stopMeasurement() {
     return true;
 }
 
-bool SEN66Dosimetry::readSensor() {
+bool OSHMonitor::readSensor() {
     if (!_sensor) {
         Serial.println("[ERROR] Sensor not initialized");
         return false;
@@ -147,11 +147,11 @@ bool SEN66Dosimetry::readSensor() {
     return true;
 }
 
-SensorData SEN66Dosimetry::getData() const {
+SensorData OSHMonitor::getData() const {
     return _currentData;
 }
 
-void SEN66Dosimetry::initializeFastTWA() {
+void OSHMonitor::initializeFastTWA() {
     cleanupFastTWA(); // Clean up any existing instances
     
     _pm1_fastTWA = new FastTWA(_samplingInterval);
@@ -160,7 +160,7 @@ void SEN66Dosimetry::initializeFastTWA() {
     _pm10_fastTWA = new FastTWA(_samplingInterval);
 }
 
-void SEN66Dosimetry::cleanupFastTWA() {
+void OSHMonitor::cleanupFastTWA() {
     delete _pm1_fastTWA;
     delete _pm2_5_fastTWA;
     delete _pm4_fastTWA;
@@ -174,7 +174,7 @@ void SEN66Dosimetry::cleanupFastTWA() {
 
 
 
-void SEN66Dosimetry::updateTWA(SensorData &data) {
+void OSHMonitor::updateTWA(SensorData &data) {
     // Add current PM values to FastTWA instances for real-time estimates
     if (_pm1_fastTWA) {
         _pm1_fastTWA->addSample(data.pm1_0);
@@ -196,7 +196,7 @@ void SEN66Dosimetry::updateTWA(SensorData &data) {
 
 // Environmental calculation methods moved to SEN66Core library
 
-bool SEN66Dosimetry::ensureLogFileExists() {
+bool OSHMonitor::ensureLogFileExists() {
     if (!LittleFS.exists(_logFilePath)) {
         File file = LittleFS.open(_logFilePath, "w");
         if (!file) {
@@ -204,7 +204,7 @@ bool SEN66Dosimetry::ensureLogFileExists() {
         }
         
         // Write metadata as header comments (system metadata only)
-        file.println("# SEN66 Air Quality Data Log");
+        file.println("# OSH-Monitor Air Quality Data Log");
         file.println("# Device: " + getMetadata("device_name", "Unknown"));
         file.println("# Firmware Version: " + getMetadata("firmware_version", "Unknown"));
         file.println("# Session Start: " + getMetadata("session_start", "Not Set"));
@@ -230,7 +230,7 @@ bool SEN66Dosimetry::ensureLogFileExists() {
     return true;
 }
 
-String SEN66Dosimetry::sensorDataToCSV(const SensorData &data) {
+String OSHMonitor::sensorDataToCSV(const SensorData &data) {
     String line = "";
     line += String(data.timestamp);
     line += "," + formatLocalTime(data.timestamp);
@@ -263,7 +263,7 @@ String SEN66Dosimetry::sensorDataToCSV(const SensorData &data) {
     return line;
 }
 
-bool SEN66Dosimetry::appendToLogFile(const String &line) {
+bool OSHMonitor::appendToLogFile(const String &line) {
     File file = LittleFS.open(_logFilePath, "a");
     if (!file) {
         return false;
@@ -275,7 +275,7 @@ bool SEN66Dosimetry::appendToLogFile(const String &line) {
     return true;
 }
 
-bool SEN66Dosimetry::logEntry(const SensorData &data) {
+bool OSHMonitor::logEntry(const SensorData &data) {
     if (!ensureLogFileExists()) {
         return false;
     }
@@ -284,14 +284,14 @@ bool SEN66Dosimetry::logEntry(const SensorData &data) {
     return appendToLogFile(csvLine);
 }
 
-bool SEN66Dosimetry::eraseLogs() {
+bool OSHMonitor::eraseLogs() {
     if (LittleFS.exists(_logFilePath)) {
         return LittleFS.remove(_logFilePath);
     }
     return true;
 }
 
-bool SEN66Dosimetry::readLogLine(size_t index, String &line) {
+bool OSHMonitor::readLogLine(size_t index, String &line) {
     File file = LittleFS.open(_logFilePath, "r");
     if (!file) {
         return false;
@@ -312,7 +312,7 @@ bool SEN66Dosimetry::readLogLine(size_t index, String &line) {
     return false;
 }
 
-size_t SEN66Dosimetry::getLogLineCount() {
+size_t OSHMonitor::getLogLineCount() {
     File file = LittleFS.open(_logFilePath, "r");
     if (!file) {
         return 0;
@@ -328,24 +328,24 @@ size_t SEN66Dosimetry::getLogLineCount() {
     return count;
 }
 
-void SEN66Dosimetry::setLogFilePath(const String &path) {
+void OSHMonitor::setLogFilePath(const String &path) {
     _logFilePath = path;
 }
 
 
 
-uint32_t SEN66Dosimetry::getUnixTime() const {
+uint32_t OSHMonitor::getUnixTime() const {
     // Use the new timestamp method which prioritizes RTC
-    return const_cast<SEN66Dosimetry*>(this)->getCurrentTimestamp();
+    return const_cast<OSHMonitor*>(this)->getCurrentTimestamp();
 }
 
-bool SEN66Dosimetry::isTimeSynchronized() const {
+bool OSHMonitor::isTimeSynchronized() const {
     // Only consider synchronized if RTC is initialized
     return _rtcInitialized;
 }
 
-void SEN66Dosimetry::loadConfig() {
-    _preferences.begin("sen66", false);  // false = read/write
+void OSHMonitor::loadConfig() {
+    _preferences.begin("osh-mon", false);  // false = read/write
     
     // Load configuration with defaults if not set
     _config.measurementInterval = _preferences.getUShort("measInterval", DEFAULT_MEASUREMENT_INTERVAL);
@@ -362,8 +362,8 @@ void SEN66Dosimetry::loadConfig() {
     Serial.printf("  UTC Offset: %+d hours\n", _config.utcOffset);
 }
 
-void SEN66Dosimetry::saveConfig() {
-    _preferences.begin("sen66", false);
+void OSHMonitor::saveConfig() {
+    _preferences.begin("osh-mon", false);
     
     _preferences.putUShort("measInterval", _config.measurementInterval);
     _preferences.putUShort("logInterval", _config.loggingInterval);
@@ -375,30 +375,30 @@ void SEN66Dosimetry::saveConfig() {
     Serial.println("Configuration saved to NVS");
 }
 
-SensorConfig SEN66Dosimetry::getConfig() const {
+SensorConfig OSHMonitor::getConfig() const {
     return _config;
 }
 
-void SEN66Dosimetry::setMeasurementInterval(uint16_t seconds) {
+void OSHMonitor::setMeasurementInterval(uint16_t seconds) {
     if (seconds < 1) seconds = 1;  // Minimum 1 second
     _config.measurementInterval = seconds;
     Serial.printf("Measurement interval set to %d seconds\n", seconds);
 }
 
-void SEN66Dosimetry::setLoggingInterval(uint16_t seconds) {
+void OSHMonitor::setLoggingInterval(uint16_t seconds) {
     _config.loggingInterval = seconds;
     Serial.printf("Logging interval set to %d seconds (0 = every measurement)\n", seconds);
 }
 
-uint16_t SEN66Dosimetry::getMeasurementInterval() const {
+uint16_t OSHMonitor::getMeasurementInterval() const {
     return _config.measurementInterval;
 }
 
-uint16_t SEN66Dosimetry::getLoggingInterval() const {
+uint16_t OSHMonitor::getLoggingInterval() const {
     return _config.loggingInterval;
 }
 
-void SEN66Dosimetry::setUtcOffset(int16_t offset) {
+void OSHMonitor::setUtcOffset(int16_t offset) {
     // Clamp to reasonable UTC offset range (-12 to +14 hours)
     if (offset < -12) offset = -12;
     if (offset > 14) offset = 14;
@@ -407,11 +407,11 @@ void SEN66Dosimetry::setUtcOffset(int16_t offset) {
     Serial.printf("UTC offset set to %+d hours\n", offset);
 }
 
-int16_t SEN66Dosimetry::getUtcOffset() const {
+int16_t OSHMonitor::getUtcOffset() const {
     return _config.utcOffset;
 }
 
-String SEN66Dosimetry::formatLocalTime(uint32_t unixTime) const {
+String OSHMonitor::formatLocalTime(uint32_t unixTime) const {
     // Apply UTC offset (convert hours to seconds)
     int32_t localTime = unixTime + (_config.utcOffset * 3600);
     
@@ -469,8 +469,8 @@ snprintf(buffer, sizeof(buffer), "%04ld-%02ld-%02ld_%02ld:%02ld:%02ld",
 
 // ==================== Metadata Management ====================
 
-void SEN66Dosimetry::loadMetadata() {
-    _preferences.begin("sen66-meta", true);  // Read-only
+void OSHMonitor::loadMetadata() {
+    _preferences.begin("osh-meta", true);  // Read-only
     
     // Load all stored metadata keys
     // ESP32 Preferences doesn't have a way to list all keys, so we'll try common ones
@@ -510,11 +510,11 @@ void SEN66Dosimetry::loadMetadata() {
         char macStr[18];
         snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
                  mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-        _metadata["device_name"] = "SEN66-" + String(macStr).substring(9); // Last 3 octets
+        _metadata["device_name"] = "OSH-" + String(macStr).substring(9); // Last 3 octets
     }
     
     if (_metadata.find("firmware_version") == _metadata.end()) {
-        _metadata["firmware_version"] = "1.0.5";
+        _metadata["firmware_version"] = "1.1.0";
     }
     
     if (_metadata.find("session_start") == _metadata.end() || _metadata["session_start"].length() == 0) {
@@ -529,8 +529,8 @@ void SEN66Dosimetry::loadMetadata() {
     Serial.println("Metadata loaded from NVS");
 }
 
-void SEN66Dosimetry::saveMetadata() {
-    _preferences.begin("sen66-meta", false);  // Read-write
+void OSHMonitor::saveMetadata() {
+    _preferences.begin("osh-meta", false);  // Read-write
     
     // Build keys list
     String keysList = "";
@@ -550,13 +550,13 @@ void SEN66Dosimetry::saveMetadata() {
     Serial.println("Metadata saved to NVS");
 }
 
-bool SEN66Dosimetry::shouldClearLogForMetadata(const String &key) const {
+bool OSHMonitor::shouldClearLogForMetadata(const String &key) const {
     // Only firmware_version and session_start are true system fields that shouldn't prompt
     // device_name should prompt since users expect confirmation when changing device identity
     return !(key == "firmware_version" || key == "session_start");
 }
 
-void SEN66Dosimetry::setMetadata(const String &key, const String &value, bool clearLog) {
+void OSHMonitor::setMetadata(const String &key, const String &value, bool clearLog) {
     // Check if this is the first time setting a dynamic metadata field
     bool isNewDynamicField = shouldClearLogForMetadata(key) && 
                              (_metadata.find(key) == _metadata.end() || _metadata[key].length() == 0);
@@ -585,7 +585,7 @@ void SEN66Dosimetry::setMetadata(const String &key, const String &value, bool cl
     }
 }
 
-String SEN66Dosimetry::getMetadata(const String &key, const String &defaultValue) const {
+String OSHMonitor::getMetadata(const String &key, const String &defaultValue) const {
     auto it = _metadata.find(key);
     if (it != _metadata.end()) {
         return it->second;
@@ -593,7 +593,7 @@ String SEN66Dosimetry::getMetadata(const String &key, const String &defaultValue
     return defaultValue;
 }
 
-std::vector<String> SEN66Dosimetry::getMetadataKeys() const {
+std::vector<String> OSHMonitor::getMetadataKeys() const {
     std::vector<String> keys;
     for (const auto &pair : _metadata) {
         keys.push_back(pair.first);
@@ -601,19 +601,19 @@ std::vector<String> SEN66Dosimetry::getMetadataKeys() const {
     return keys;
 }
 
-void SEN66Dosimetry::setUser(const String &user) {
+void OSHMonitor::setUser(const String &user) {
     setMetadata("user", user);
 }
 
-void SEN66Dosimetry::setProject(const String &project) {
+void OSHMonitor::setProject(const String &project) {
     setMetadata("project", project);
 }
 
-void SEN66Dosimetry::setLocation(const String &location) {
+void OSHMonitor::setLocation(const String &location) {
     setMetadata("location", location);
 }
 
-bool SEN66Dosimetry::resetMetadata() {
+bool OSHMonitor::resetMetadata() {
     // Clear all non-system metadata from the map
     auto it = _metadata.begin();
     while (it != _metadata.end()) {
@@ -636,7 +636,7 @@ bool SEN66Dosimetry::resetMetadata() {
 }
 
 // Export CSV with OSHA-compliant TWA calculations
-bool SEN66Dosimetry::exportCSVWithTWA(const String &filename) {
+bool OSHMonitor::exportCSVWithTWA(const String &filename) {
     // Read existing CSV data
     File logFile = LittleFS.open(_logFilePath, "r");
     if (!logFile) {
@@ -710,12 +710,12 @@ bool SEN66Dosimetry::exportCSVWithTWA(const String &filename) {
 }
 
 // Get last TWA export result
-TWAExportResult SEN66Dosimetry::getLastTWAExport() const {
+TWAExportResult OSHMonitor::getLastTWAExport() const {
     return _lastTWAExport;
 }
 
 // Parse CSV line helper method
-bool SEN66Dosimetry::parseCSVLine(const String &line, SensorData &data, unsigned long &timestamp) {
+bool OSHMonitor::parseCSVLine(const String &line, SensorData &data, unsigned long &timestamp) {
     // Skip header lines or empty lines
     if (line.startsWith("timestamp") || line.length() == 0) {
         return false;
@@ -747,7 +747,7 @@ bool SEN66Dosimetry::parseCSVLine(const String &line, SensorData &data, unsigned
 }
 
 // Calculate time-weighted TWA
-float SEN66Dosimetry::calculateTimeWeightedTWA(const std::vector<std::pair<unsigned long, float>> &dataPoints, 
+float OSHMonitor::calculateTimeWeightedTWA(const std::vector<std::pair<unsigned long, float>> &dataPoints, 
                                                unsigned long periodStart, unsigned long periodEnd,
                                                unsigned long &gaps) {
     if (dataPoints.empty()) return 0.0f;
@@ -779,10 +779,10 @@ float SEN66Dosimetry::calculateTimeWeightedTWA(const std::vector<std::pair<unsig
 }
 
 // Write OSHA-compliant export header
-bool SEN66Dosimetry::writeExportHeader(File &file) {
+bool OSHMonitor::writeExportHeader(File &file) {
     
     file.println("# OSHA-Compliant 8-Hour Time-Weighted Average Report");
-    file.println("# Generated by SEN66 Dosimetry System");
+    file.println("# Generated by OSH-Monitor System");
     file.printf("# Export Time: %s\n", formatLocalTime(time(nullptr)).c_str());
     file.printf("# Period Start: %s\n", _lastTWAExport.exportStartTime.c_str());
     file.printf("# Period End: %s\n", _lastTWAExport.exportEndTime.c_str());
@@ -830,7 +830,7 @@ bool SEN66Dosimetry::writeExportHeader(File &file) {
 
 // ============ RTC Implementation Functions ============
 
-void SEN66Dosimetry::initializeRTC() {
+void OSHMonitor::initializeRTC() {
     Serial.println("[RTC] Initializing ESP32-S3 RTC...");
     
     // Check if RTC time is reasonable (after 2024)
@@ -852,7 +852,7 @@ void SEN66Dosimetry::initializeRTC() {
     _lastSyncTime = 0;
 }
 
-bool SEN66Dosimetry::setRTCTime(unsigned long epochTime) {
+bool OSHMonitor::setRTCTime(unsigned long epochTime) {
     Serial.printf("[RTC] Setting RTC time to: %lu (%s", epochTime, ctime((time_t*)&epochTime));
     
     struct timeval tv;
@@ -871,7 +871,7 @@ bool SEN66Dosimetry::setRTCTime(unsigned long epochTime) {
     }
 }
 
-unsigned long SEN66Dosimetry::getRTCTime() {
+unsigned long OSHMonitor::getRTCTime() {
     struct timeval tv;
     if (gettimeofday(&tv, NULL) == 0) {
         return tv.tv_sec;
@@ -881,11 +881,11 @@ unsigned long SEN66Dosimetry::getRTCTime() {
     }
 }
 
-bool SEN66Dosimetry::isRTCInitialized() {
+bool OSHMonitor::isRTCInitialized() {
     return _rtcInitialized;
 }
 
-bool SEN66Dosimetry::needsRTCSync() {
+bool OSHMonitor::needsRTCSync() {
     if (!_rtcInitialized) {
         return true;
     }
@@ -897,7 +897,7 @@ bool SEN66Dosimetry::needsRTCSync() {
     return (timeSinceSync > (RTC_SYNC_INTERVAL_HOURS * 3600));
 }
 
-TimeSource SEN66Dosimetry::getTimeSource() {
+TimeSource OSHMonitor::getTimeSource() {
     if (_rtcInitialized) {
         return TIME_SOURCE_RTC;
     } else {
@@ -905,7 +905,7 @@ TimeSource SEN66Dosimetry::getTimeSource() {
     }
 }
 
-unsigned long SEN66Dosimetry::getCurrentTimestamp() {
+unsigned long OSHMonitor::getCurrentTimestamp() {
     if (_rtcInitialized) {
         return getRTCTime();
     } else {
@@ -914,7 +914,7 @@ unsigned long SEN66Dosimetry::getCurrentTimestamp() {
     }
 }
 
-String SEN66Dosimetry::getRTCStatus() {
+String OSHMonitor::getRTCStatus() {
     String status = "RTC Status:\n";
     status += "  Initialized: " + String(_rtcInitialized ? "YES" : "NO") + "\n";
     

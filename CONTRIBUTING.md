@@ -1,6 +1,6 @@
-# Contributing to SEN66-Dosimetry
+# Contributing to OSH-Monitor
 
-Thank you for your interest in contributing to SEN66-Dosimetry! This document provides guidelines for contributing to the project.
+Thank you for your interest in contributing to OSH-Monitor! This document provides guidelines for contributing to the project.
 
 ## Code of Conduct
 
@@ -79,8 +79,8 @@ Fixes #42
 1. Install PlatformIO
 2. Clone your fork:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/SEN66-Dosimetry.git
-   cd SEN66-Dosimetry
+   git clone https://github.com/YOUR_USERNAME/OSH-Monitor.git
+   cd OSH-Monitor
    ```
 3. Create a branch:
    ```bash
@@ -119,4 +119,4 @@ Feel free to open an issue for questions or reach out to the maintainers.
 
 By contributing, you agree that your contributions will be licensed under the MIT License.
 
-Thank you for contributing to SEN66-Dosimetry! 🎉
+Thank you for contributing to OSH-Monitor! 🎉

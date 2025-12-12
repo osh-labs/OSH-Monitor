@@ -1,6 +1,6 @@
-# SEN66-Dosimetry CLI Tool
+# OSH-Monitor CLI Tool
 
-A Python command-line tool for interacting with the SEN66-Dosimetry air quality monitor.
+A Python command-line tool for interacting with the OSH-Monitor air quality monitor.
 
 ## Installation
 
@@ -12,40 +12,40 @@ pip install pyserial
 
 ### List Available Ports
 ```bash
-python sen66_cli.py list-ports
+python osh_cli.py list-ports
 ```
 
 ### View Current Status
 Get the most recent measurement from the sensor:
 ```bash
-python sen66_cli.py status
+python osh_cli.py status
 
 # Specify port
-python sen66_cli.py status --port COM5
+python osh_cli.py status --port COM5
 ```
 
 ### Download Log File
 Download the CSV log file from the board:
 ```bash
-python sen66_cli.py download
+python osh_cli.py download
 
 # Specify output file
-python sen66_cli.py download --output my_data.csv
+python osh_cli.py download --output my_data.csv
 
 # Specify port and output
-python sen66_cli.py download --port COM5 --output data.csv
+python osh_cli.py download --port COM5 --output data.csv
 ```
 
 ### Clear Log File
 Clear the CSV log file on the board:
 ```bash
-python sen66_cli.py clear --port COM5
+python osh_cli.py clear --port COM5
 ```
 
 ### Monitor Live Data
 Continuously monitor live output from the board:
 ```bash
-python sen66_cli.py monitor --port COM5
+python osh_cli.py monitor --port COM5
 ```
 Press `Ctrl+C` to stop monitoring.
 
@@ -70,23 +70,23 @@ Press `Ctrl+C` to stop monitoring.
 
 ```bash
 # Auto-detect board and show status
-python sen66_cli.py status
+python osh_cli.py status
 
 # Download data with custom filename
-python sen66_cli.py download --output "air_quality_$(date +%Y%m%d).csv"
+python osh_cli.py download --output "air_quality_$(date +%Y%m%d).csv"
 
 # Clear log on specific port
-python sen66_cli.py clear --port COM6
+python osh_cli.py clear --port COM6
 
 # Monitor with auto-detection
-python sen66_cli.py monitor
+python osh_cli.py monitor
 ```
 
 ## Requirements
 
 - Python 3.6+
 - pyserial library
-- SEN66-Dosimetry board connected via USB
+- OSH-Monitor board connected via USB
 
 ## Troubleshooting
 

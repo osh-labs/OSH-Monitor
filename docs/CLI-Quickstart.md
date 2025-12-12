@@ -1,6 +1,6 @@
-# SEN66-Dosimetry CLI Quickstart
+# OSH-Monitor CLI Quickstart
 
-A concise guide to installing, connecting, and using the SEN66-Dosimetry Python CLI to interact with the ESP32-S3 SEN66 firmware.
+A concise guide to installing, connecting, and using the OSH-Monitor Python CLI to interact with the ESP32-S3 SEN66 firmware.
 
 ---
 
@@ -21,7 +21,7 @@ pip install pyserial
 List available ports, then pick your device (e.g., `COM5`):
 
 ```bash
-python sen66_cli.py list-ports
+python osh_cli.py list-ports
 ```
 
 Auto-detection is built-in, but specifying `--port` is more reliable when multiple devices are connected.
@@ -32,34 +32,34 @@ Auto-detection is built-in, but specifying `--port` is more reliable when multip
 
 - Show measurement status:
 ```bash
-python sen66_cli.py status --port COM5
+python osh_cli.py status --port COM5
 ```
 
 - Download CSV log (timestamped filename):
 ```bash
-python sen66_cli.py download --output sensor_log.csv --port COM5
+python osh_cli.py download --output sensor_log.csv --port COM5
 ```
 
 - Export OSHA 8-hour TWA (and download):
 ```bash
-python sen66_cli.py export-twa --port COM5
+python osh_cli.py export-twa --port COM5
 ```
 
 - Set timezone to UTC-5:
 ```bash
-python sen66_cli.py timezone --offset -5 --port COM5
+python osh_cli.py timezone --offset -5 --port COM5
 ```
 
 - Monitor live stream:
 ```bash
-python sen66_cli.py monitor --port COM5
+python osh_cli.py monitor --port COM5
 ```
 
 - Interactive console (REPL):
 ```bash
-python sen66_cli.py
+python osh_cli.py
 # or
-python sen66_cli.py console --port COM5
+python osh_cli.py console --port COM5
 ```
 
 ---
@@ -69,21 +69,21 @@ python sen66_cli.py console --port COM5
 ### Compliance Export + Log Retrieval
 1. Generate TWA export:
 ```bash
-python sen66_cli.py export-twa --port COM5
+python osh_cli.py export-twa --port COM5
 ```
 2. Download sensor log (auto-generates TWA alongside):
 ```bash
-python sen66_cli.py download --output sensor_log.csv --port COM5
+python osh_cli.py download --output sensor_log.csv --port COM5
 ```
 
 ### RTC Synchronization
 - Show RTC status:
 ```bash
-python sen66_cli.py rtc-status --port COM5
+python osh_cli.py rtc-status --port COM5
 ```
 - Sync device RTC to host time:
 ```bash
-python sen66_cli.py rtc-sync --port COM5
+python osh_cli.py rtc-sync --port COM5
 ```
 
 ---
@@ -121,30 +121,30 @@ The CLI talks to the firmware over serial using human-readable commands.
 
 - List ports and connect for status:
 ```bash
-python sen66_cli.py list-ports
-python sen66_cli.py status --port COM5
+python osh_cli.py list-ports
+python osh_cli.py status --port COM5
 ```
 
 - Download logs and auto-generate TWA alongside:
 ```bash
-python sen66_cli.py download --output sensor_log.csv --port COM5
+python osh_cli.py download --output sensor_log.csv --port COM5
 ```
 
 - Generate dedicated TWA export:
 ```bash
-python sen66_cli.py export-twa --port COM5
+python osh_cli.py export-twa --port COM5
 ```
 
 - Set timezone (validation in [-12, +14]):
 ```bash
-python sen66_cli.py timezone --offset -5 --port COM5
+python osh_cli.py timezone --offset -5 --port COM5
 ```
 
 - Use interactive console:
 ```bash
-python sen66_cli.py
+python osh_cli.py
 # or
-python sen66_cli.py console --port COM5
+python osh_cli.py console --port COM5
 ```
 
 ---
@@ -173,8 +173,8 @@ python sen66_cli.py console --port COM5
 - Always set `timezone` before logging for correct localized timestamps.
 - For config changes (e.g., measurement or logging intervals), use:
 ```bash
-python sen66_cli.py set --key measurement --value 60 --port COM5
-python sen66_cli.py set --key logging --value 60 --port COM5
+python osh_cli.py set --key measurement --value 60 --port COM5
+python osh_cli.py set --key logging --value 60 --port COM5
 ```
 
 ---
@@ -190,7 +190,7 @@ python sen66_cli.py set --key logging --value 60 --port COM5
 
 ## Interactive Console Commands
 
-Within the console (`sen66_cli.py` or `console`), supported commands include:
+Within the console (`osh_cli.py` or `console`), supported commands include:
 
 `status`, `clear`, `download [file]`, `export_twa [file]`, `rtc status`, `rtc sync`, `config`, `prefs <key> <value>`, `timezone <offset>`, `metadata`, `meta <key> <value>`, `resetmeta`, `monitor`, `list-ports`, `about`, `help`, `exit`.
 
@@ -202,20 +202,20 @@ This console flushes the buffer between prompts to keep responses clean and pred
 
 | Command | Description | Example |
 |---|---|---|
-| `list-ports` | List available serial ports | `python sen66_cli.py list-ports` |
-| `status` | Show latest measurement block | `python sen66_cli.py status --port COM5` |
-| `download` | Download `/sensor_log.csv` to local file | `python sen66_cli.py download --output sensor_log.csv --port COM5` |
-| `export-twa` | Generate and download 8-hr TWA export | `python sen66_cli.py export-twa --port COM5` |
-| `timezone` / `utc` | Set UTC offset [-12,+14] | `python sen66_cli.py timezone --offset -5 --port COM5` |
-| `rtc-status` | Show ESP32 RTC status | `python sen66_cli.py rtc-status --port COM5` |
-| `rtc-sync` | Sync RTC to host Unix time | `python sen66_cli.py rtc-sync --port COM5` |
-| `config` | Show current configuration | `python sen66_cli.py config --port COM5` |
-| `set` | Set config value via `prefs <key> <value>` | `python sen66_cli.py set --key logging --value 60 --port COM5` |
-| `metadata` | Show all metadata | `python sen66_cli.py metadata --port COM5` |
-| `meta` | Set metadata value | `python sen66_cli.py meta --key project --value Demo --port COM5` |
-| `resetmeta` | Reset metadata to defaults and clear log | `python sen66_cli.py resetmeta --port COM5` |
-| `monitor` | Stream live output until Ctrl+C | `python sen66_cli.py monitor --port COM5` |
-| `console` | Start interactive console (REPL) | `python sen66_cli.py console --port COM5` |
-| `about` | Show project and license info | `python sen66_cli.py about` |
+| `list-ports` | List available serial ports | `python osh_cli.py list-ports` |
+| `status` | Show latest measurement block | `python osh_cli.py status --port COM5` |
+| `download` | Download `/sensor_log.csv` to local file | `python osh_cli.py download --output sensor_log.csv --port COM5` |
+| `export-twa` | Generate and download 8-hr TWA export | `python osh_cli.py export-twa --port COM5` |
+| `timezone` / `utc` | Set UTC offset [-12,+14] | `python osh_cli.py timezone --offset -5 --port COM5` |
+| `rtc-status` | Show ESP32 RTC status | `python osh_cli.py rtc-status --port COM5` |
+| `rtc-sync` | Sync RTC to host Unix time | `python osh_cli.py rtc-sync --port COM5` |
+| `config` | Show current configuration | `python osh_cli.py config --port COM5` |
+| `set` | Set config value via `prefs <key> <value>` | `python osh_cli.py set --key logging --value 60 --port COM5` |
+| `metadata` | Show all metadata | `python osh_cli.py metadata --port COM5` |
+| `meta` | Set metadata value | `python osh_cli.py meta --key project --value Demo --port COM5` |
+| `resetmeta` | Reset metadata to defaults and clear log | `python osh_cli.py resetmeta --port COM5` |
+| `monitor` | Stream live output until Ctrl+C | `python osh_cli.py monitor --port COM5` |
+| `console` | Start interactive console (REPL) | `python osh_cli.py console --port COM5` |
+| `about` | Show project and license info | `python osh_cli.py about` |
 
 Note: In interactive console, the equivalent command for `export-twa` is `export_twa`.

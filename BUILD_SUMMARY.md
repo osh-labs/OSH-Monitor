@@ -15,8 +15,8 @@
 ### Files Created
 
 #### Library Core
-- ✅ `src/SEN66Dosimetry.h` - Main library header with API definitions
-- ✅ `src/SEN66Dosimetry.cpp` - Complete implementation with all features
+- ✅ `src/OSHMonitor.h` - Main library header with API definitions
+- ✅ `src/OSHMonitor.cpp` - Complete implementation with all features
 - ✅ `src/main.cpp` - Demo application with formatted output
 
 #### Configuration
@@ -87,9 +87,9 @@ bool stopMeasurement();
 ### Usage Example
 
 ```cpp
-#include "SEN66Dosimetry.h"
+#include "OSHMonitor.h"
 
-SEN66Dosimetry sensor(Wire, 60);
+OSHMonitor sensor(Wire, 60);
 
 void setup() {
     sensor.begin(21, 22);

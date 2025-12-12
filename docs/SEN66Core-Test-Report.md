@@ -135,14 +135,14 @@ bool SEN66Core::startMeasurement() {
 ### ✅ 1. OSHMonitor + SEN66Core Initialization
 **Status:** PASSED  
 **Verification:**
-- `SEN66Dosimetry` class now uses `SEN66Core*` pointer
+- `OSHMonitor` class now uses `SEN66Core*` pointer
 - Constructor initializes `_sensor(nullptr)`
 - `begin()` creates new `SEN66Core` instance
 - Destructor deletes `_sensor`
 
 **Code Review:**
 ```cpp
-bool SEN66Dosimetry::begin(int sdaPin, int sclPin, uint32_t i2cFreq) {
+bool OSHMonitor::begin(int sdaPin, int sclPin, uint32_t i2cFreq) {
     _sensor = new SEN66Core(_wire);
     if (!_sensor->begin(sdaPin, sclPin, i2cFreq)) {
         Serial.println("Failed to initialize SEN66 sensor");
@@ -166,7 +166,7 @@ bool SEN66Dosimetry::begin(int sdaPin, int sclPin, uint32_t i2cFreq) {
 
 **Code Review:**
 ```cpp
-bool SEN66Dosimetry::readSensor() {
+bool OSHMonitor::readSensor() {
     SEN66FullData sensorData;
     if (!_sensor->readFullData(sensorData)) {
         return false;
@@ -214,7 +214,7 @@ header += ",temperature,humidity,vocIndex,noxIndex,pm1_0,pm2_5,pm4_0,pm10,co2,de
 - No CLI command modifications required
 
 **Integration Points:**
-- CLI → `SEN66Dosimetry::readSensor()` → `SEN66Core::readFullData()`
+- CLI → `OSHMonitor::readSensor()` → `SEN66Core::readFullData()`
 - TWA export still uses CSV parsing (platform layer)
 - All serial commands work through platform API
 
@@ -253,7 +253,7 @@ Linking .pio\build\...\firmware.elf
 
 **Verification:**
 - No changes required to `BasicLogger.ino`
-- Uses platform API (`SEN66Dosimetry`)
+- Uses platform API (`OSHMonitor`)
 - Sensor abstraction transparent to example
 
 ✓ Example compiles without errors  
@@ -287,7 +287,7 @@ Linking .pio\build\...\firmware.elf
 
 **Regression Verification:**
 ```cpp
-// Line 224 in SEN66Dosimetry.cpp - UNCHANGED
+// Line 224 in OSHMonitor.cpp - UNCHANGED
 header += ",temperature,humidity,vocIndex,noxIndex,pm1_0,pm2_5,pm4_0,pm10,co2,dewPoint,heatIndex,absoluteHumidity,twa_pm1_0,twa_pm2_5,twa_pm4_0,twa_pm10";
 ```
 
@@ -373,7 +373,7 @@ Flash: [===       ]  34.4% (used 450473 bytes from 1310720 bytes)
 - ✅ Derived calculations
 - ✅ Error management
 
-**OSHMonitor Platform (SEN66Dosimetry):**
+**OSHMonitor Platform (OSHMonitor):**
 - ✅ LittleFS CSV logging
 - ✅ TWA orchestration
 - ✅ RTC timestamp management

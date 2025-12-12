@@ -1,8 +1,8 @@
-# ESP32-S3 RTC Integration for SEN66-Dosimetry
+# ESP32-S3 RTC Integration for OSH-Monitor
 
 ## Overview
 
-The SEN66-Dosimetry project has been enhanced with ESP32-S3 Real-Time Clock (RTC) integration to provide accurate and persistent timekeeping across power cycles. This addresses critical issues with timestamp corruption and improves the reliability of TWA (Time-Weighted Average) calculations for OSHA compliance monitoring.
+The OSH-Monitor project has been enhanced with ESP32-S3 Real-Time Clock (RTC) integration to provide accurate and persistent timekeeping across power cycles. This addresses critical issues with timestamp corruption and improves the reliability of TWA (Time-Weighted Average) calculations for OSHA compliance monitoring.
 
 ## Problem Solved
 
@@ -76,7 +76,7 @@ rtc sync 1702982400
 #### Show RTC Status
 ```bash
 # Command line
-python sen66_cli.py rtc-status
+python osh_cli.py rtc-status
 
 # Interactive console
 > rtc status
@@ -85,14 +85,14 @@ python sen66_cli.py rtc-status
 #### Synchronize RTC with PC Time
 ```bash
 # Command line
-python sen66_cli.py rtc-sync
+python osh_cli.py rtc-sync
 
 # Interactive console
 > rtc sync
 ```
 
 ### Simplified Architecture
-The legacy `timesync` functionality has been removed to streamline the system. The SEN66-Dosimetry now uses only ESP32-S3 RTC for timekeeping, with millis() fallback when RTC is unavailable.
+The legacy `timesync` functionality has been removed to streamline the system. The OSH-Monitor now uses only ESP32-S3 RTC for timekeeping, with millis() fallback when RTC is unavailable.
 
 ## Configuration
 
@@ -103,7 +103,7 @@ The legacy `timesync` functionality has been removed to streamline the system. T
 4. **Validation**: RTC time must be after January 1, 2024 to be considered valid
 
 ### Customization
-Modify these constants in `SEN66Dosimetry.h`:
+Modify these constants in `OSHMonitor.h`:
 ```cpp
 #define RTC_SYNC_INTERVAL 86400     // Sync recommendation interval (seconds)
 #define RTC_MIN_VALID_TIME 1704067200  // January 1, 2024 (Unix timestamp)
@@ -135,8 +135,8 @@ Modify these constants in `SEN66Dosimetry.h`:
 
 ### Recommended Upgrade Process
 1. **Deploy firmware**: Flash updated firmware with RTC-only support
-2. **Initial sync**: Run `python sen66_cli.py rtc-sync` to initialize RTC
-3. **Verify operation**: Check `python sen66_cli.py rtc-status` to confirm proper operation
+2. **Initial sync**: Run `python osh_cli.py rtc-sync` to initialize RTC
+3. **Verify operation**: Check `python osh_cli.py rtc-status` to confirm proper operation
 4. **Update scripts**: Replace any usage of legacy `sync` commands with `rtc-sync`
 
 ## Troubleshooting
@@ -145,7 +145,7 @@ Modify these constants in `SEN66Dosimetry.h`:
 **Symptoms**: `rtc status` shows "Initialized: NO"
 **Solution**: Run RTC synchronization command
 ```bash
-python sen66_cli.py rtc-sync
+python osh_cli.py rtc-sync
 ```
 
 ### Time Drift
@@ -169,13 +169,13 @@ python sen66_cli.py rtc-sync
 
 ### Code Changes Summary
 
-#### SEN66Dosimetry.h
+#### OSHMonitor.h
 - Added RTC includes (`time.h`, `sys/time.h`)
 - Added `TimeSource` enumeration
 - Added RTC method declarations
 - Added RTC private variables
 
-#### SEN66Dosimetry.cpp
+#### OSHMonitor.cpp
 - Implemented RTC initialization in `begin()`
 - Added RTC management functions
 - Updated timestamp generation to use `getCurrentTimestamp()`
@@ -186,7 +186,7 @@ python sen66_cli.py rtc-sync
 - Updated help text with RTC options
 - Enhanced command parsing for RTC operations
 
-#### sen66_cli.py
+#### osh_cli.py
 - Added `rtc_status()` and `rtc_sync()` methods
 - Enhanced command-line argument parsing
 - Updated interactive console with RTC commands
@@ -200,6 +200,6 @@ python sen66_cli.py rtc-sync
 
 ## Conclusion
 
-The ESP32-S3 RTC integration significantly improves the reliability and accuracy of the SEN66-Dosimetry system. By providing persistent timekeeping across power cycles, it eliminates critical issues with timestamp corruption while maintaining full backward compatibility with existing deployments.
+The ESP32-S3 RTC integration significantly improves the reliability and accuracy of the OSH-Monitor system. By providing persistent timekeeping across power cycles, it eliminates critical issues with timestamp corruption while maintaining full backward compatibility with existing deployments.
 
 This enhancement is particularly valuable for industrial air quality monitoring applications where OSHA compliance and accurate TWA calculations are essential for regulatory reporting and workplace safety documentation.

@@ -1,11 +1,11 @@
 /**
  * ===============================================================================
- * SEN66-Dosimetry Main Application
+ * OSH-Monitor Main Application
  * 
- * Advanced air quality monitoring with the Sensirion SEN66 sensor
+ * Open-source occupational safety & health monitoring platform
  * Includes real-time measurements, 8-hour TWA calculations, and CSV logging
  * 
- * Project: SEN66-Dosimetry
+ * Project: OSH-Monitor
  * Creator: Christopher Lee
  * License: GNU General Public License v3.0 (GPLv3)
  * 
@@ -29,14 +29,14 @@
  */
 
 #include <Arduino.h>
-#include "SEN66Dosimetry.h"
+#include "OSHMonitor.h"
 
 // I2C Pin Definitions
 #define SDA_PIN 3
 #define SCL_PIN 4
 
-// Create sensor instance with 20-second sampling interval for TWA calculations
-SEN66Dosimetry airQualitySensor(Wire, 20);
+// Create platform instance with 20-second sampling interval for TWA calculations
+OSHMonitor airQualitySensor(Wire, 20);
 
 // Timing variables
 unsigned long lastMeasurementTime = 0;
@@ -54,7 +54,7 @@ void showMetadata();
 void printWelcomeBanner() {
     Serial.println("\n");
     Serial.println("╔══════════════════════════════════════════════════════════╗");
-    Serial.println("║          SEN66-Dosimetry Air Quality Monitor             ║");
+    Serial.println("║             OSH-Monitor Air Quality System               ║");
     Serial.println("║     Environmental Monitoring & Particulate Dosimetry     ║");
     Serial.println("╚══════════════════════════════════════════════════════════╝");
     Serial.println();
@@ -104,7 +104,7 @@ void setup() {
     
     // Initialize the SEN66 dosimetry library
     if (!airQualitySensor.begin(SDA_PIN, SCL_PIN, 100000)) {
-        Serial.println("❌ ERROR: Failed to initialize SEN66-Dosimetry!");
+        Serial.println("❌ ERROR: Failed to initialize OSH-Monitor platform!");
         Serial.println();
         Serial.println("Troubleshooting:");
         Serial.printf("  1. Check I2C connections (SDA=%d, SCL=%d)\n", SDA_PIN, SCL_PIN);
@@ -505,7 +505,7 @@ void handleSerialCommands() {
 
 void showHelp() {
     Serial.println("\n╔═════════════════════════════════════════════════════════════╗");
-    Serial.println("║             SEN66-Dosimetry Serial Commands                 ║");
+    Serial.println("║                OSH-Monitor Serial Commands                  ║");
     Serial.println("╠═════════════════════════════════════════════════════════════╣");
     Serial.println("║ help, h, ?              - Show this help message            ║");
     Serial.println("║ dump, d                 - Display CSV file contents         ║");

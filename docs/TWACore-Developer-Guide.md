@@ -2,7 +2,7 @@
 
 **OSHA-Compliant Time-Weighted Average Calculation Library**
 
-This guide explains the TWACore library for new engineers joining the SEN66-Dosimetry environmental monitoring project.
+This guide explains the TWACore library for new engineers joining the OSH-Monitor environmental monitoring project.
 
 ---
 
@@ -11,7 +11,7 @@ This guide explains the TWACore library for new engineers joining the SEN66-Dosi
 - [What is TWA and Why Do We Need It?](#what-is-twa-and-why-do-we-need-it)
 - [The Dual-Architecture Approach](#the-dual-architecture-approach)
 - [Key Design Patterns](#key-design-patterns)
-- [Integration with SEN66-Dosimetry](#integration-with-sen66-dosimetry)
+- [Integration with OSH-Monitor](#integration-with-OSH-Monitor)
 - [Critical Implementation Details](#critical-implementation-details)
 - [Common Pitfalls](#common-pitfalls-for-new-engineers)
 - [Quick Start Guide](#quick-start-for-new-features)
@@ -131,7 +131,7 @@ protected:
 
 ---
 
-## Integration with SEN66-Dosimetry
+## Integration with OSH-Monitor
 
 The TWACore library integrates into the main project workflow:
 
@@ -374,4 +374,4 @@ The TWACore library's beauty lies in its **separation of concerns**:
 
 Whether you're monitoring air quality, noise levels, radiation, or gas concentrations, the TWA mathematics and OSHA compliance logic remains identical—just swap the parameter names and units.
 
-This design enables the SEN66-Dosimetry project to scale from simple particulate monitoring to comprehensive multi-parameter environmental compliance systems.
+This design enables the OSH-Monitor project to scale from simple particulate monitoring to comprehensive multi-parameter environmental compliance systems.

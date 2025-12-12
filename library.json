@@ -1,25 +1,25 @@
 {
-  "name": "SEN66-Dosimetry",
-  "version": "0.1.0",
-  "description": "Advanced Air-Quality Acquisition, Dosimetry, and CSV Logging for the Sensirion SEN66 sensor on ESP32-S3",
+  "name": "OSH-Monitor",
+  "version": "0.2.0",
+  "description": "Open-Source Occupational Safety & Health Monitoring Platform - Sensor-agnostic environmental monitoring, dosimetry, and compliance logging for ESP32-S3",
   "keywords": [
-    "sen66",
-    "sensirion",
+    "osh",
+    "occupational safety",
+    "platform",
+    "sensor-agnostic",
     "air quality",
     "particulate matter",
     "dosimetry",
     "environmental monitoring",
     "esp32",
     "esp32-s3",
-    "VOC",
-    "NOx",
-    "PM2.5",
-    "PM10",
-    "TWA"
+    "OSHA",
+    "TWA",
+    "compliance"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/SEN66-Dosimetry.git"
+    "url": "https://github.com/duluthmachineworks/OSH-Monitor.git"
   },
   "authors": [
     {
@@ -28,11 +28,11 @@
       "maintainer": true
     }
   ],
-  "license": "MIT",
-  "homepage": "https://github.com/yourusername/SEN66-Dosimetry",
+  "license": "GPL-3.0",
+  "homepage": "https://github.com/duluthmachineworks/OSH-Monitor",
   "frameworks": "arduino",
   "platforms": "espressif32",
-  "headers": "SEN66Dosimetry.h",
+  "headers": "OSHMonitor.h",
   "export": {
     "include": [
       "src/*"

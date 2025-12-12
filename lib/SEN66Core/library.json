@@ -21,10 +21,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/duluthmachineworks/SEN66-Dosimetry.git"
+    "url": "https://github.com/duluthmachineworks/OSH-Monitor.git"
   },
   "license": "GPL-3.0",
-  "homepage": "https://github.com/duluthmachineworks/SEN66-Dosimetry",
+  "homepage": "https://github.com/duluthmachineworks/OSH-Monitor",
   "frameworks": ["arduino"],
   "platforms": ["espressif32"],
   "dependencies": [

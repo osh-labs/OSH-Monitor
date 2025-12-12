@@ -29,14 +29,14 @@
 
 #include <Arduino.h>
 #include <LittleFS.h>
-#include "SEN66Dosimetry.h"
+#include "OSHMonitor.h"
 
 // I2C Pin Definitions
 #define SDA_PIN 3
 #define SCL_PIN 4
 
-// Create sensor instance with 60-second sampling interval
-SEN66Dosimetry sensor(Wire, 60);
+// Create platform instance with 60-second sampling interval
+OSHMonitor sensor(Wire, 60);
 
 // Timing variables
 unsigned long lastReadTime = 0;
@@ -57,7 +57,7 @@ void setup() {
     }
     
     Serial.println("\n╔════════════════════════════════════════════════════════════╗");
-    Serial.println("║         SEN66-Dosimetry Air Quality Monitor                ║");
+    Serial.println("║            OSH-Monitor Air Quality System                  ║");
     Serial.println("║              with Metadata Support                         ║");
     Serial.println("╚════════════════════════════════════════════════════════════╝\n");
     
@@ -65,7 +65,7 @@ void setup() {
     
     // Initialize the library with defined I2C pins
     if (!sensor.begin(SDA_PIN, SCL_PIN)) {
-        Serial.println("\n❌ ERROR: Failed to initialize SEN66-Dosimetry!");
+        Serial.println("\n❌ ERROR: Failed to initialize OSH-Monitor platform!");
         Serial.println("Troubleshooting:");
         Serial.println("  1. Check I2C wiring (SDA=GPIO3, SCL=GPIO4)");
         Serial.println("  2. Verify sensor power (3.3V or 5V)");

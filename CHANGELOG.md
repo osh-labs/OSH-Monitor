@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2025-12-10
 
 ### Added
-- Initial release of SEN66-Dosimetry library
+- Initial release of OSH-Monitor library
 - Core sensor acquisition from Sensirion SEN66
   - Temperature, Humidity, VOC Index, NOx Index
   - PM1.0, PM2.5, PM4.0, PM10
@@ -66,5 +66,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Minimal flash wear with buffered writes
 - Non-blocking operation suitable for long-term deployment
 
-[Unreleased]: https://github.com/yourusername/SEN66-Dosimetry/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/yourusername/SEN66-Dosimetry/releases/tag/v0.1.0
+[Unreleased]: https://github.com/yourusername/OSH-Monitor/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/yourusername/OSH-Monitor/releases/tag/v0.1.0

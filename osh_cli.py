@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 ===============================================================================
-SEN66-Dosimetry CLI Tool
+OSH-Monitor CLI Tool
 A command-line interface for interacting with the SEN66 air quality monitor
 
-Project: SEN66-Dosimetry
+Project: OSH-Monitor
 Creator: Christopher Lee
 License: GNU General Public License v3.0 (GPLv3)
 
@@ -20,15 +20,15 @@ GNU General Public License for more details.
 ===============================================================================
 
 Usage:
-    python sen66_cli.py                               # Interactive console mode
-    python sen66_cli.py console [--port COM5]         # Interactive console mode
-    python sen66_cli.py status [--port COM5]
-    python sen66_cli.py clear [--port COM5]
-    python sen66_cli.py download [--port COM5] [--output data.csv]
-    python sen66_cli.py sync [--port COM5]
-    python sen66_cli.py timezone --offset -5 [--port COM5]
-    python sen66_cli.py monitor [--port COM5]
-    python sen66_cli.py list-ports
+    python osh_cli.py                               # Interactive console mode
+    python osh_cli.py console [--port COM5]         # Interactive console mode
+    python osh_cli.py status [--port COM5]
+    python osh_cli.py clear [--port COM5]
+    python osh_cli.py download [--port COM5] [--output data.csv]
+    python osh_cli.py sync [--port COM5]
+    python osh_cli.py timezone --offset -5 [--port COM5]
+    python osh_cli.py monitor [--port COM5]
+    python osh_cli.py list-ports
 """
 
 import argparse
@@ -46,7 +46,7 @@ except ImportError:
 
 
 class SEN66CLI:
-    """CLI interface for SEN66-Dosimetry board"""
+    """CLI interface for OSH-Monitor board"""
     
     def __init__(self, port=None, baudrate=115200, timeout=2):
         self.port = port
@@ -751,9 +751,9 @@ class SEN66CLI:
     def show_about(self):
         """Display project information and license"""
         print("\n" + "="*80)
-        print("  SEN66-Dosimetry Project Information")
+        print("  OSH-Monitor Project Information")
         print("="*80)
-        print("\nProject: SEN66-Dosimetry")
+        print("\nProject: OSH-Monitor")
         print("Creator: Christopher Lee")
         print("License: GNU General Public License v3.0 (GPLv3)")
         print("\nDescription:")
@@ -838,7 +838,7 @@ def list_ports():
 def interactive_mode(port=None, baudrate=115200):
     """Run CLI in interactive console mode"""
     print("\n" + "="*60)
-    print("  SEN66-Dosimetry Interactive Console")
+    print("  OSH-Monitor Interactive Console")
     print("="*60)
     print("\nCommands:")
     print("  status              - Show current measurement")
@@ -1011,7 +1011,7 @@ def interactive_mode(port=None, baudrate=115200):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="SEN66-Dosimetry CLI Tool",
+        description="OSH-Monitor CLI Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -1095,7 +1095,7 @@ Examples:
                 cli.set_config(args.key, int(args.value))
             else:
                 print("Error: set command requires --key and --value")
-                print("Example: python sen66_cli.py set --key measurement --value 30")
+                print("Example: python osh_cli.py set --key measurement --value 30")
                 return 1
         elif args.command == 'metadata':
             cli.show_metadata()
@@ -1104,14 +1104,14 @@ Examples:
                 cli.set_metadata(args.key, args.value)
             else:
                 print("Error: meta command requires --key and --value")
-                print("Example: python sen66_cli.py meta --key user --value John_Doe")
+                print("Example: python osh_cli.py meta --key user --value John_Doe")
                 return 1
         elif args.command == 'timezone' or args.command == 'utc':
             if args.offset is not None:
                 cli.set_timezone(str(args.offset))
             else:
                 print("Error: timezone command requires --offset")
-                print("Example: python sen66_cli.py timezone --offset -5")
+                print("Example: python osh_cli.py timezone --offset -5")
                 return 1
         elif args.command == 'about':
             cli.show_about()
