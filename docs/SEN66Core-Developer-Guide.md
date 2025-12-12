@@ -496,8 +496,12 @@ private:
 public:
     OSHMonitor() : _sen66(Wire) {}
     
-    void begin() {
-        Wire.begin();
+    void begin(int sdaPin = 3, int sclPin = 4) {
+        // Note: Default pins for Adafruit Feather ESP32-S3 Reverse TFT
+        // Generic ESP32: GPIO 21 (SDA), GPIO 22 (SCL)
+        // Adafruit Feather ESP32-S3: GPIO 3 (SDA), GPIO 4 (SCL)
+        
+        Wire.begin(sdaPin, sclPin);
         
         if (!_sen66.begin()) {
             Serial.println("ERROR: SEN66 sensor initialization failed");
@@ -527,8 +531,10 @@ public:
 ### I2C Communication Timing
 
 ```cpp
-bool SEN66Core::begin() {
-    _wire.begin();
+bool SEN66Core::begin(int sdaPin, int sclPin, uint32_t i2cFreq) {
+    // Initialize I2C bus with custom pins
+    _wire.begin(sdaPin, sclPin);
+    _wire.setClock(i2cFreq);
     _sen66.begin(_wire);
     
     delay(1000);  // CRITICAL: Sensor requires 1s boot time
@@ -544,6 +550,11 @@ bool SEN66Core::begin() {
     return (error == 0);
 }
 ```
+
+**I2C Pin Configuration:**
+- **Adafruit Feather ESP32-S3 Reverse TFT**: GPIO 3 (SDA), GPIO 4 (SCL)
+- **Generic ESP32/ESP32-S3**: GPIO 21 (SDA), GPIO 22 (SCL)
+- **Custom Pins**: Specify in `begin(sdaPin, sclPin)` call
 
 **Timing Requirements:**
 - **1000ms boot delay:** SEN66 firmware initialization
@@ -647,8 +658,8 @@ SEN66RawData SEN66Core::readRawData() {
 ❌ **Wrong:**
 ```cpp
 void setup() {
-    Wire.begin();
-    sensor.begin();  // Fails - sensor not ready
+    Wire.begin(3, 4);  // Initialize I2C
+    sensor.begin();    // Fails - sensor not ready
     sensor.readRawData();  // Returns garbage
 }
 ```
@@ -656,10 +667,14 @@ void setup() {
 ✅ **Correct:**
 ```cpp
 void setup() {
-    Wire.begin();
+    // Adafruit Feather ESP32-S3 Reverse TFT pins
+    #define SDA_PIN 3
+    #define SCL_PIN 4
+    
+    Wire.begin(SDA_PIN, SCL_PIN);
     delay(1000);  // Wait for sensor boot
     
-    if (!sensor.begin()) {
+    if (!sensor.begin(SDA_PIN, SCL_PIN)) {
         Serial.println("Sensor initialization failed");
         while(1);  // Halt on critical failure
     }
@@ -732,11 +747,11 @@ if (raw.co2 > 1000.0f) {
 
 ❌ **Wrong:**
 ```cpp
-Wire.begin();
+Wire.begin(3, 4);  // Initialize I2C bus
 SEN66Core sen66(Wire);
 BME680Core bme680(Wire);  // Both on same bus
-sen66.begin();
-bme680.begin();  // May cause I2C address conflicts
+sen66.begin(3, 4);
+bme680.begin(3, 4);  // May cause I2C address conflicts if addresses match
 ```
 
 ✅ **Correct:**
@@ -746,13 +761,16 @@ bme680.begin();  // May cause I2C address conflicts
 // BME680 default: 0x77 or 0x76
 // No conflict - safe to use on same bus
 
-Wire.begin();
+#define SDA_PIN 3
+#define SCL_PIN 4
+
+Wire.begin(SDA_PIN, SCL_PIN);
 SEN66Core sen66(Wire);
 BME680Core bme680(Wire);
 
-sen66.begin();
+sen66.begin(SDA_PIN, SCL_PIN);
 delay(100);
-bme680.begin();
+bme680.begin(SDA_PIN, SCL_PIN);
 ```
 
 ### 6. Units Confusion
@@ -795,8 +813,9 @@ private:
 public:
     NewSensorCore(TwoWire& wire) : _wire(wire) {}
     
-    bool begin() {
-        _wire.begin();
+    bool begin(int sdaPin = 3, int sclPin = 4, uint32_t i2cFreq = 100000) {
+        _wire.begin(sdaPin, sclPin);
+        _wire.setClock(i2cFreq);
         _sensor.begin(_wire);
         delay(1000);  // Check datasheet for boot time
         return _sensor.startMeasurement();

@@ -73,37 +73,17 @@ OSH-Monitor is built as a **platform orchestration layer** that coordinates spec
 - **Heat Index** (NOAA/Steadman approximation)
 - **Absolute Humidity** (g/m³)
 
-### ⏱️ Advanced TWA (Time-Weighted Average) System
-**Dual-Mode TWA Architecture for Real-Time Monitoring & Regulatory Compliance**
+### ⏱️ Time-Weighted Average (TWA) System
+**OSHA-Compliant 8-Hour Exposure Calculations**
 
-#### 🔄 FastTWA (Real-Time Calculations)
-- **Purpose**: Live TWA display during monitoring
-- **Method**: Efficient circular buffer with rolling averages
-- **Update Rate**: Every measurement cycle (10-60 seconds)
-- **Memory**: RAM-resident for fast access
-- **Window**: Configurable (default 8 hours)
-- **Parameters**: PM1.0, PM2.5, PM4.0, PM10
+The platform provides dual-mode TWA calculations for real-time monitoring and regulatory reporting:
 
-#### 📋 ExportTWA (Regulatory Compliance)
-- **Purpose**: OSHA-compliant 8-hour TWA calculations for regulatory reporting
-- **Method**: Precise weighted-average calculations from stored CSV data
-- **Data Source**: Complete historical data from LittleFS storage  
-- **Compliance**: OSHA 29 CFR 1910.1000 standards
-- **Features**:
-  - Gap detection and analysis
-  - Data coverage validation (≥8 hours required)
-  - Chronological timestamp verification
-  - Precise time-weighted calculations
+- **FastTWA**: Real-time TWA display updated every measurement cycle for live monitoring
+- **ExportTWA**: Precise OSHA-compliant 8-hour TWA reports from stored CSV data
+- **Compliance**: Automated validation against OSHA 29 CFR 1910.1000 standards (≥8 hours data)
+- **Sensor-Agnostic**: Reusable TWA engine supporting any environmental parameters
 
-#### 🏭 OSHA Compliance Features
-- **Minimum Data Requirements**: 8+ hours of continuous data
-- **Gap Tolerance**: Automatic detection of data interruptions
-- **Regulatory Headers**: Complete compliance documentation in CSV exports
-- **Audit Trail**: Comprehensive calculation metadata including:
-  - Data coverage period
-  - Sample count and analysis
-  - Compliance status determination
-  - Gap detection results
+> **📘 For Implementation Details**: See [TWACore Developer Guide](docs/TWACore-Developer-Guide.md) for architecture details, algorithms, design patterns, and integration examples.
 
 ### 💾 CSV Logging (LittleFS)
 - Append-only logging
@@ -141,25 +121,14 @@ OSH-Monitor is built as a **platform orchestration layer** that coordinates spec
 
 ### Hardware Configuration
 
-#### Default I2C Pins
-The platform uses standard ESP32 I2C pins by default:
-- **SDA:** GPIO 21
-- **SCL:** GPIO 22
+The platform uses I2C communication with the following pin configuration for Adafruit Feather ESP32-S3 Reverse TFT:
+- **SDA:** GPIO 3
+- **SCL:** GPIO 4
 - **Frequency:** 100 kHz (I2C standard mode)
 
-These defaults work with most ESP32-S3 board variants. To use custom pins, modify `src/main.cpp`:
+The SEN66 sensor uses a fixed I2C address (0x6B) and can share the I2C bus with other devices.
 
-```cpp
-void setup() {
-    Wire.begin(SDA_PIN, SCL_PIN);  // Custom pins
-    // Example: Wire.begin(33, 32);
-}
-```
-
-#### SEN66 I2C Configuration
-- **I2C Address:** 0x6B (fixed, not configurable)
-- **Communication:** I2C standard mode (100 kHz)
-- **Bus Sharing:** Can share I2C bus with other devices (different addresses)
+> **📘 For Hardware Details**: See [SEN66Core Developer Guide](docs/SEN66Core-Developer-Guide.md) for I2C timing requirements, alternative pin configurations, wiring diagrams, and multi-sensor bus configurations.
 
 ## Installation
 
@@ -244,14 +213,18 @@ python osh_cli.py download --output my_data.csv
 #include <Arduino.h>
 #include "OSHMonitor.h"
 
+// I2C Pin Definitions (Adafruit Feather ESP32-S3 Reverse TFT)
+#define SDA_PIN 3
+#define SCL_PIN 4
+
 // Platform instantiation with 20-second sampling
-OSHMonitor sensor(Wire, 20);
+OSHMonitor airQualitySensor(Wire, 20);
 
 void setup() {
     Serial.begin(115200);
     
-    // Initialize platform (I2C SDA=21, SCL=22)
-    if (!sensor.begin(21, 22)) {
+    // Initialize platform (I2C SDA=3, SCL=4)
+    if (!airQualitySensor.begin(SDA_PIN, SCL_PIN)) {
         Serial.println("Platform initialization failed!");
         while(1) delay(1000);
     }
@@ -261,10 +234,10 @@ void setup() {
 
 void loop() {
     // Platform orchestration loop
-    if (sensor.readSensor()) {
-        SensorData data = sensor.getData();
-        sensor.updateTWA(data);  // Real-time TWA
-        sensor.logEntry(data);   // CSV logging
+    if (airQualitySensor.readSensor()) {
+        SensorData data = airQualitySensor.getData();
+        airQualitySensor.updateTWA(data);  // Real-time TWA
+        airQualitySensor.logEntry(data);   // CSV logging
         
         Serial.printf("Temp: %.2f°C, PM2.5: %.2f µg/m³\n", 
                      data.temperature, data.pm2_5);
@@ -307,68 +280,27 @@ When connected to the ESP32-S3 via serial monitor, the following commands are av
 
 ## API Reference
 
-### Initialization
+The platform provides a simple high-level API for sensor operations, data logging, and TWA calculations:
 
 ```cpp
-OSHMonitor(TwoWire &wire = Wire, uint16_t samplingInterval = 60);
-bool begin(int sdaPin = 21, int sclPin = 22, uint32_t i2cFreq = 100000);
+// Initialization
+OSHMonitor airQualitySensor(Wire, 20);  // 20-second sampling interval
+airQualitySensor.begin(3, 4);            // I2C pins: SDA=3, SCL=4
+
+// Core operations in main loop
+airQualitySensor.readSensor();                // Read all measurements
+SensorData data = airQualitySensor.getData(); // Get sensor data
+airQualitySensor.updateTWA(data);             // Update real-time TWA
+airQualitySensor.logEntry(data);              // Log to CSV
+
+// TWA export and compliance
+airQualitySensor.exportCSVWithTWA("/twa_export.csv");
+TWAExportResult report = airQualitySensor.getLastTWAExport();
 ```
 
-### Sensor Operations
-
-```cpp
-bool readSensor();                    // Read all measurements from SEN66
-SensorData getData() const;           // Get current sensor data
-void updateTWA(SensorData &data);     // Update 8-hour TWA calculations
-bool startMeasurement();              // Start sensor measurement mode
-bool stopMeasurement();               // Stop sensor measurement mode
-```
-
-### Data Logging
-
-```cpp
-bool logEntry(const SensorData &data);           // Log entry to CSV
-bool eraseLogs();                                // Erase all log files
-bool readLogLine(size_t index, String &line);    // Read specific log line
-size_t getLogLineCount();                        // Get total log lines
-void setLogFilePath(const String &path);         // Set custom log path
-```
-
-### TWA Export & Compliance
-
-```cpp
-TWAExportResult exportCSVWithTWA();              // Generate OSHA-compliant TWA export
-bool dumpTWAFile();                              // Output TWA export via serial
-```
-
-**TWAExportResult Structure:**
-```cpp
-struct TWAExportResult {
-    float twa_pm1_0, twa_pm2_5, twa_pm4_0, twa_pm10;  // 8-hour TWAs (µg/m³)
-    float dataCoverageHours;                            // Total hours analyzed
-    bool oshaCompliant;                                 // ≥8 hours requirement
-    uint32_t samplesAnalyzed;                           // Number of data points
-    uint32_t dataGaps;                                  // Detected interruptions
-    String exportStartTime, exportEndTime;             // Time period bounds
-};
-```
-
-### Data Structure
-
-```cpp
-struct SensorData {
-    // Raw measurements
-    float temperature, humidity, vocIndex, noxIndex;
-    float pm1_0, pm2_5, pm4_0, pm10, co2;
-    
-    // Derived metrics
-    float dewPoint, heatIndex, absoluteHumidity;
-    
-    // 8-hour TWAs
-    float twa_pm1_0, twa_pm2_5, twa_pm4_0, twa_pm10;
-    
-    uint32_t timestamp;
-};
+> **📘 For Complete API Documentation**: See developer guides for detailed method signatures, data structures, error handling, and integration patterns:
+> - [SEN66Core Developer Guide](docs/SEN66Core-Developer-Guide.md) - Sensor API and data structures
+> - [TWACore Developer Guide](docs/TWACore-Developer-Guide.md) - TWA calculation API
 ```
 
 ## CSV Format
@@ -455,129 +387,13 @@ python osh_cli.py console
 python osh_cli.py monitor
 ```
 
-## TWA Calculation Mechanics
+## Developer Documentation
 
-### Data Flow Architecture
-```
-1. Raw Sensor Data → 2. FastTWA (Live Display) → 3. CSV Storage
-                  ↘                           ↗
-                    4. ExportTWA (Regulatory) ←
-```
+For detailed technical documentation on platform internals:
 
-### Calculation Methods
-
-#### FastTWA Algorithm
-- **Circular Buffer**: Maintains last N samples in RAM
-- **Rolling Average**: Efficient O(1) updates using sum maintenance
-- **Real-Time**: Updated every measurement cycle
-- **Purpose**: Live monitoring and user feedback
-
-#### ExportTWA Algorithm  
-- **Time-Weighted Calculation**: `TWA = Σ(concentration × time_interval) / total_time`
-- **Gap Handling**: Automatic detection of data interruptions
-- **Chronological Verification**: Ensures proper timestamp ordering
-- **Data Source**: Complete CSV file analysis for maximum accuracy
-
-### OSHA Compliance Implementation
-
-#### Regulatory Requirements (29 CFR 1910.1000)
-- **Minimum Duration**: 8 hours of data required
-- **Sampling Frequency**: Regular intervals (10-60 seconds supported)
-- **Documentation**: Complete audit trail with calculation metadata
-- **Gap Analysis**: Detection and reporting of data interruptions
-
-#### Quality Assurance Features
-- **Timestamp Validation**: Ensures chronological data order
-- **Coverage Analysis**: Calculates actual monitoring duration
-- **Sample Integrity**: Validates data completeness
-- **Compliance Reporting**: Clear pass/fail determination
-
-## TWACore Library Architecture
-
-### Sensor-Agnostic Design Philosophy
-
-The TWA calculation system has been extracted into a standalone, reusable library called **TWACore**, located in `lib/TWACore/`. This architecture enables OSHA-compliant time-weighted average calculations for any environmental monitoring application, not just particulate matter.
-
-### Library Structure
-
-```
-lib/TWACore/
-├── library.json              # PlatformIO library metadata
-├── src/
-│   ├── TWACore.h             # Generic TWA API definitions
-│   └── TWACore.cpp           # Platform-agnostic implementation
-└── examples/
-    └── GenericTWA/
-        └── GenericTWA.ino    # 2-parameter example (temp/humidity)
-```
-
-### Key Features
-
-#### Generic Map-Based API
-TWACore uses `std::map<String, float>` to support arbitrary numbers of parameters:
-```cpp
-TWAExportResult result = exportTWA.calculateTWA();
-for (const auto& param : result.parameterTWAs) {
-    Serial.printf("%s TWA: %.2f\n", param.first.c_str(), param.second);
-}
-```
-
-#### Dynamic CSV Column Mapping
-Automatic header row scanning adapts to any CSV format:
-- Detects parameter columns by name matching
-- Handles arbitrary metadata columns
-- Requires only `timestamp` column and registered parameters
-
-#### Template Method Pattern
-Extensible design for custom export formats:
-- Override `writeExportHeader()` for custom headers
-- Override `writeExportFooter()` for additional metadata
-- Core calculation logic remains unchanged
-
-### Reusability Examples
-
-TWACore can be adapted for various monitoring applications:
-
-**VOC/NOx Monitoring**:
-```cpp
-std::vector<String> params = {"vocIndex", "noxIndex"};
-ExportTWA exportTWA("log.csv", params, 30);
-```
-
-**Noise Dosimetry**:
-```cpp
-std::vector<String> params = {"soundLevel_dBA"};
-ExportTWA exportTWA("noise_log.csv", params, 1);
-```
-
-**Multi-Gas Detection**:
-```cpp
-std::vector<String> params = {"CO_ppm", "CO2_ppm", "H2S_ppm", "CH4_ppm"};
-ExportTWA exportTWA("gas_log.csv", params, 60);
-```
-
-**Radiation Monitoring**:
-```cpp
-std::vector<String> params = {"dose_uSv", "rate_uSv_h"};
-ExportTWA exportTWA("radiation_log.csv", params, 300);
-```
-
-### Integration with OSHMonitor
-
-The OSHMonitor library instantiates TWACore with particulate matter parameters:
-```cpp
-std::vector<String> pmParams = {"pm1_0", "pm2_5", "pm4_0", "pm10"};
-ExportTWA exportTWA(_logFilePath, pmParams, _samplingInterval);
-```
-
-This approach maintains backward compatibility while enabling the TWA system to be reused in entirely different projects.
-
-### License & Dependencies
-
-- **License**: GPLv3 (same as parent project)
-- **Framework**: Arduino (portable to ESP32, ESP8266, STM32, etc.)
-- **Dependencies**: Standard C++ library (`<vector>`, `<map>`)
-- **Version**: 1.0.0 (independently versioned from firmware)
+- **[TWACore Developer Guide](docs/TWACore-Developer-Guide.md)** - Complete guide to TWA calculation architecture, algorithms, design patterns, common pitfalls, and integration examples for new sensor types
+- **[SEN66Core Developer Guide](docs/SEN66Core-Developer-Guide.md)** - Sensor driver implementation details and hardware integration
+- **[CLI Developer Guide](docs/CLI_README.md)** - Python CLI architecture and command implementation
 
 ## Examples
 
@@ -586,32 +402,25 @@ See the `examples/` directory for complete examples:
 
 ## Wiring
 
-### Standard I2C Connection
+Connect the SEN66 sensor to ESP32-S3 using I2C (Adafruit Feather ESP32-S3 Reverse TFT):
 
 | SEN66 Pin | ESP32-S3 Pin | Description |
 |-----------|--------------|-------------|
-| VDD       | 3.3V/5V      | Power supply |
+| VDD       | 3.3V or 5V   | Power supply |
 | GND       | GND          | Ground |
-| SDA       | GPIO 21      | I2C Data |
-| SCL       | GPIO 22      | I2C Clock |
+| SDA       | GPIO 3       | I2C Data |
+| SCL       | GPIO 4       | I2C Clock |
+
+> **📘 For Detailed Wiring**: See [SEN66Core Developer Guide](docs/SEN66Core-Developer-Guide.md) for timing requirements, multi-sensor configurations, and troubleshooting.
 
 ## Performance
 
-### Memory & Storage
-- **RAM Usage**: ~32KB (includes dual TWA buffers)
-- **Flash Usage**: ~440KB compiled binary
-- **CSV Storage**: LittleFS filesystem on internal flash
-- **FastTWA Buffer**: 1440 samples (24 hours at 60s interval)
-- **ExportTWA**: Dynamic analysis of complete dataset
-
-### Timing & Accuracy
-- **Sampling Rate**: Configurable (10-60 seconds, default 20s)
-- **TWA Window**: 8 hours (OSHA standard)  
-- **Timestamp Resolution**: 1-second precision
-- **UTC Offset Range**: -12 to +14 hours
-- **Calculation Latency**: 
-  - FastTWA: <1ms (real-time)
-  - ExportTWA: <5s (full dataset analysis)
+- **Sampling Rate**: 10-60 seconds (configurable, default 20s)
+- **TWA Window**: 8 hours (OSHA standard)
+- **Data Storage**: LittleFS filesystem on internal flash
+- **Memory Footprint**: ~32KB RAM, ~440KB flash
+- **Real-time TWA**: <1ms calculation latency
+- **Export Generation**: <5s for complete dataset analysis
 
 ## Troubleshooting
 
