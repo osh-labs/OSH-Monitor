@@ -7,7 +7,7 @@
  * 
  * @author Christopher Lee
  * @license GPL-3.0
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 #ifndef SEN66_CORE_H
@@ -16,6 +16,17 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <SensirionI2cSen66.h>
+
+/**
+ * @brief Sensor lifecycle states
+ */
+enum class SensorState {
+    UNINITIALIZED,  // Sensor not initialized
+    INITIALIZING,   // Sensor initialization in progress
+    IDLE,           // Sensor initialized but not measuring
+    MEASURING,      // Sensor actively taking measurements
+    ERROR           // Sensor in error state
+};
 
 /**
  * @brief Raw measurements from SEN66 sensor
@@ -143,6 +154,18 @@ public:
     bool isReady() const;
     
     /**
+     * @brief Get current sensor state
+     * @return Current SensorState
+     */
+    SensorState getState() const;
+    
+    /**
+     * @brief Check if sensor is actively measuring
+     * @return true if in MEASURING state, false otherwise
+     */
+    bool isMeasuring() const;
+    
+    /**
      * @brief Get last error message
      * @return Error description string
      */
@@ -151,7 +174,7 @@ public:
 private:
     TwoWire &_wire;
     SensirionI2cSen66 _sensor;
-    bool _initialized;
+    SensorState _state;
     String _lastError;
     
     /**

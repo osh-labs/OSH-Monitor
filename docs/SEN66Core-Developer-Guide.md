@@ -145,41 +145,132 @@ SEN66Core sensor1(Wire);   // I2C bus 0
 SEN66Core sensor2(Wire1);  // I2C bus 1
 ```
 
-### State Management Pattern
+### State Management (v1.1.0+)
 
-Sensors have lifecycle states that must be tracked:
+**As of v1.1.0**, SEN66Core implements comprehensive state tracking to support power management and robust sensor lifecycle control.
+
+#### State Enumeration
 
 ```cpp
 enum class SensorState {
-    UNINITIALIZED,
-    INITIALIZING,
-    READY,
-    MEASURING,
-    ERROR
+    UNINITIALIZED,  // Sensor not initialized
+    INITIALIZING,   // Sensor initialization in progress
+    IDLE,           // Sensor initialized but not measuring
+    MEASURING,      // Sensor actively taking measurements
+    ERROR           // Sensor in error state
 };
+```
 
-class SEN66Core {
-private:
-    SensorState _state = SensorState::UNINITIALIZED;
-    
-public:
-    bool begin() {
-        _state = SensorState::INITIALIZING;
-        // ... initialization code ...
-        _state = SensorState::READY;
-        return true;
+#### State Transition Diagram
+
+```
+UNINITIALIZED ──begin()──> INITIALIZING ──success──> IDLE ──startMeasurement()──> MEASURING
+                               │                       ▲            │
+                               │                       │            │
+                           [error]              stopMeasurement()  │
+                               │                       │            │
+                               └───────> ERROR <───────┴────────────┘
+                                           │
+                                    deviceReset()
+                                           │
+                                           ▼
+                                    UNINITIALIZED
+```
+
+#### Valid Operations by State
+
+| State          | begin() | startMeasurement() | stopMeasurement() | readRawData() | deviceReset() |
+|----------------|---------|-------------------|-------------------|---------------|---------------|
+| UNINITIALIZED  | ✓       | ✗                 | ✓ (idempotent)    | ✗             | ✓             |
+| INITIALIZING   | ✗       | ✗                 | ✗                 | ✗             | ✓             |
+| IDLE           | ✗       | ✓                 | ✓ (idempotent)    | ✗             | ✓             |
+| MEASURING      | ✗       | ✓ (idempotent)    | ✓                 | ✓             | ✓             |
+| ERROR          | ✗       | ✗                 | ✗                 | ✗             | ✓             |
+
+#### State Query Methods
+
+```cpp
+// Get current state
+SensorState state = sensor.getState();
+
+// Check if actively measuring
+if (sensor.isMeasuring()) {
+    // Safe to read data
+}
+
+// Backward compatible ready check
+if (sensor.isReady()) {
+    // Sensor is either IDLE or MEASURING
+}
+```
+
+#### Power Management Example
+
+```cpp
+SEN66Core sensor;
+
+void setup() {
+    sensor.begin();  // UNINITIALIZED → INITIALIZING → IDLE → MEASURING
+}
+
+void enterLowPowerMode() {
+    if (sensor.isMeasuring()) {
+        sensor.stopMeasurement();  // MEASURING → IDLE
     }
-    
-    SEN66RawData readRawData() {
-        if (_state != SensorState::READY) {
-            return {}; // Empty struct
-        }
-        _state = SensorState::MEASURING;
-        // ... read sensor ...
-        _state = SensorState::READY;
-        return data;
+    // Enter ESP32 deep sleep
+}
+
+void wakeFromLowPowerMode() {
+    // ESP32 wakes up
+    if (sensor.getState() == SensorState::IDLE) {
+        sensor.startMeasurement();  // IDLE → MEASURING
+        delay(2000);  // Allow sensor to stabilize
     }
-};
+}
+```
+
+#### Idempotent Behavior
+
+Start and stop operations are **idempotent** for safe power management:
+
+```cpp
+// Safe to call multiple times
+sensor.startMeasurement();
+sensor.startMeasurement();  // Returns true immediately, already MEASURING
+
+sensor.stopMeasurement();
+sensor.stopMeasurement();  // Returns true immediately, already IDLE
+```
+
+#### Error Recovery
+
+```cpp
+if (sensor.getState() == SensorState::ERROR) {
+    // Reset sensor to recover
+    sensor.deviceReset();  // ERROR → UNINITIALIZED
+    delay(1000);
+    sensor.begin();        // Re-initialize
+}
+```
+
+#### State Validation Guards
+
+All operations validate state before execution:
+
+```cpp
+// Attempt to read data without starting measurement
+SEN66RawData data;
+if (!sensor.readRawData(data)) {
+    Serial.println(sensor.getLastError());
+    // Output: "Sensor not in measurement mode"
+}
+
+// Attempt to start from wrong state
+if (sensor.getState() == SensorState::ERROR) {
+    sensor.startMeasurement();  // Returns false
+    Serial.println(sensor.getLastError());
+    // Output: "Cannot start measurement - sensor not in IDLE state"
+}
 ```
 
 ### Environmental Calculation Algorithms

@@ -4,17 +4,19 @@
  * 
  * @author Christopher Lee
  * @license GPL-3.0
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 #include "SEN66Core.h"
 #include <math.h>
 
 SEN66Core::SEN66Core(TwoWire &wire)
-    : _wire(wire), _initialized(false), _lastError("") {
+    : _wire(wire), _state(SensorState::UNINITIALIZED), _lastError("") {
 }
 
 bool SEN66Core::begin(int sdaPin, int sclPin, uint32_t i2cFreq) {
+    _state = SensorState::INITIALIZING;
+    
     // Initialize I2C
     _wire.begin(sdaPin, sclPin);
     _wire.setClock(i2cFreq);
@@ -26,6 +28,7 @@ bool SEN66Core::begin(int sdaPin, int sclPin, uint32_t i2cFreq) {
     int16_t error = _sensor.deviceReset();
     if (error != 0) {
         setError("Device reset failed with error: " + String(error));
+        _state = SensorState::ERROR;
         return false;
     }
     
@@ -40,35 +43,65 @@ bool SEN66Core::begin(int sdaPin, int sclPin, uint32_t i2cFreq) {
         // Non-fatal, continue initialization
     }
     
+    _state = SensorState::IDLE;
+    
     // Start measurement
     if (!startMeasurement()) {
         setError("Failed to start measurement");
+        _state = SensorState::ERROR;
         return false;
     }
     
     // Wait for sensor to stabilize
     delay(2000);
     
-    _initialized = true;
     _lastError = "";
     return true;
 }
 
 bool SEN66Core::startMeasurement() {
+    // Idempotent - already measuring
+    if (_state == SensorState::MEASURING) {
+        return true;
+    }
+    
+    // Can only start from IDLE state
+    if (_state != SensorState::IDLE) {
+        setError("Cannot start measurement - sensor not in IDLE state");
+        return false;
+    }
+    
     int16_t error = _sensor.startContinuousMeasurement();
     if (error != 0) {
         setError("Start measurement failed with error: " + String(error));
+        _state = SensorState::ERROR;
         return false;
     }
+    
+    _state = SensorState::MEASURING;
     return true;
 }
 
 bool SEN66Core::stopMeasurement() {
+    // Idempotent - already idle or uninitialized
+    if (_state == SensorState::IDLE || _state == SensorState::UNINITIALIZED) {
+        return true;
+    }
+    
+    // Can only stop from MEASURING state
+    if (_state != SensorState::MEASURING) {
+        setError("Cannot stop measurement - sensor not in MEASURING state");
+        return false;
+    }
+    
     int16_t error = _sensor.stopMeasurement();
     if (error != 0) {
         setError("Stop measurement failed with error: " + String(error));
+        _state = SensorState::ERROR;
         return false;
     }
+    
+    _state = SensorState::IDLE;
     return true;
 }
 
@@ -76,9 +109,11 @@ bool SEN66Core::deviceReset() {
     int16_t error = _sensor.deviceReset();
     if (error != 0) {
         setError("Device reset failed with error: " + String(error));
+        _state = SensorState::ERROR;
         return false;
     }
     delay(1200);  // Wait for reset to complete
+    _state = SensorState::UNINITIALIZED;
     return true;
 }
 
@@ -93,8 +128,8 @@ String SEN66Core::getSerialNumber() {
 }
 
 bool SEN66Core::readRawData(SEN66RawData &data) {
-    if (!_initialized) {
-        setError("Sensor not initialized");
+    if (_state != SensorState::MEASURING) {
+        setError("Sensor not in measurement mode");
         return false;
     }
     
@@ -111,6 +146,7 @@ bool SEN66Core::readRawData(SEN66RawData &data) {
     
     if (error != 0) {
         setError("Failed to read sensor values, error code: " + String(error));
+        _state = SensorState::ERROR;
         return false;
     }
     
@@ -211,7 +247,15 @@ float SEN66Core::calculateAbsoluteHumidity(float temp, float humidity) {
 }
 
 bool SEN66Core::isReady() const {
-    return _initialized;
+    return (_state == SensorState::IDLE || _state == SensorState::MEASURING);
+}
+
+SensorState SEN66Core::getState() const {
+    return _state;
+}
+
+bool SEN66Core::isMeasuring() const {
+    return (_state == SensorState::MEASURING);
 }
 
 String SEN66Core::getLastError() const {
