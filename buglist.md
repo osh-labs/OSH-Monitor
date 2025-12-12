@@ -67,4 +67,5 @@
 ## New Bugs  - Only fix if prompted
 - Garbage charachters in Esported TWA CSV - they are present at the mu symbol and superscript.
 - there is an excessive header row below the TWA data in the TWA csv
+- NVS namespaces - 'osh-mon' should be renamed to 'osh-prefs' to be more human readible
 

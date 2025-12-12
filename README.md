@@ -139,6 +139,28 @@ OSH-Monitor is built as a **platform orchestration layer** that coordinates spec
 - **Interface**: I²C communication
 - **Storage**: Internal flash memory with LittleFS
 
+### Hardware Configuration
+
+#### Default I2C Pins
+The platform uses standard ESP32 I2C pins by default:
+- **SDA:** GPIO 21
+- **SCL:** GPIO 22
+- **Frequency:** 100 kHz (I2C standard mode)
+
+These defaults work with most ESP32-S3 board variants. To use custom pins, modify `src/main.cpp`:
+
+```cpp
+void setup() {
+    Wire.begin(SDA_PIN, SCL_PIN);  // Custom pins
+    // Example: Wire.begin(33, 32);
+}
+```
+
+#### SEN66 I2C Configuration
+- **I2C Address:** 0x6B (fixed, not configurable)
+- **Communication:** I2C standard mode (100 kHz)
+- **Bus Sharing:** Can share I2C bus with other devices (different addresses)
+
 ## Installation
 
 ### Deploying the Platform
@@ -621,7 +643,7 @@ See the `examples/` directory for complete examples:
 - ✅ Generic ESP32-S3 boards with Arduino framework support
 
 **Supported Sensors:**
-- ✅ Sensirion SEN66 (via SEN66Core v1.0.0)
+- ✅ Sensirion SEN66 (via SEN66Core v1.0.1)
 - 🔄 BME680 (planned)
 - 🔄 SCD40 (planned)
 - 🔄 PMS5003 (planned)
