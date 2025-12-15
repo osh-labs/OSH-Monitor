@@ -32,7 +32,7 @@
 #include "OSHMonitor.h"
 
 // Firmware Version
-#define FIRMWARE_VERSION "1.2.0"
+#define FIRMWARE_VERSION "1.2.1"
 
 // I2C Pin Definitions
 #define SDA_PIN 3
@@ -129,7 +129,7 @@ void setup() {
     // Store firmware and library versions in metadata
     airQualitySensor.setMetadata("firmware_version", FIRMWARE_VERSION);
     airQualitySensor.setMetadata("sen66core_version", "1.1.1");
-    airQualitySensor.setMetadata("twacore_version", "1.0.0");
+    airQualitySensor.setMetadata("twacore_version", "1.1.0");
     
     Serial.println("✓ Initialization successful!");
     Serial.println();
@@ -375,7 +375,10 @@ void handleSerialCommands() {
             if (response == "yes") {
                 // Clear log file first
                 if (LittleFS.exists("/sensor_log.csv")) {
-                    if (LittleFS.remove("/sensor_log.csv")) {
+                    // Use truncate (instant) instead of remove (slow)
+                    File file = LittleFS.open("/sensor_log.csv", "w");
+                    if (file) {
+                        file.close();
                         Serial.println("✓ Log file cleared");
                     } else {
                         Serial.println("❌ ERROR: Failed to clear log file");
@@ -469,8 +472,14 @@ void handleSerialCommands() {
             
             if (response == "yes") {
                 Serial.println("⚠ Clearing CSV log file...");
-                LittleFS.remove("/sensor_log.csv");
-                Serial.println("✓ Log file cleared!\n");
+                // Use truncate (fast) instead of remove (slow)
+                File file = LittleFS.open("/sensor_log.csv", "w");
+                if (file) {
+                    file.close();
+                    Serial.println("✓ Log file cleared instantly!\n");
+                } else {
+                    Serial.println("❌ ERROR: Failed to truncate log file\n");
+                }
             } else {
                 Serial.println("❌ Clear operation cancelled.\n");
             }

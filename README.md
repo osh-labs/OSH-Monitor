@@ -80,7 +80,8 @@ The platform provides dual-mode TWA calculations for real-time monitoring and re
 
 - **FastTWA**: Real-time TWA display updated every measurement cycle for live monitoring
 - **ExportTWA**: Precise OSHA-compliant 8-hour TWA reports from stored CSV data
-- **Compliance**: Automated validation against OSHA 29 CFR 1910.1000 standards (≥8 hours data)
+- **Compliance**: Automated validation against OSHA 29 CFR 1910.1000 standards (8-10 hours per shift)
+- **Duration Limits**: On-device export limited to single shifts (≤10 hours); multi-shift analysis requires desktop tools
 - **Sensor-Agnostic**: Reusable TWA engine supporting any environmental parameters
 
 > **📘 For Implementation Details**: See [TWACore Developer Guide](docs/TWACore-Developer-Guide.md) for architecture details, algorithms, design patterns, and integration examples.

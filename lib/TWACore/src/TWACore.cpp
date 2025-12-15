@@ -146,7 +146,8 @@ TWAExportResult ExportTWA::calculateFromCSV(const String& csvData,
     
     // Calculate coverage and compliance
     result.dataCoverageHours = (periodEnd - periodStart) / 3600.0f;
-    result.oshaCompliant = (result.dataCoverageHours >= MIN_OSHA_HOURS);
+    result.oshaCompliant = (result.dataCoverageHours >= MIN_OSHA_HOURS && result.dataCoverageHours <= 10.0f);
+    result.exceedsMaxDuration = (result.dataCoverageHours > 10.0f);
     result.samplesAnalyzed = samples.size();
     
     result.exportStartTime = formatLocalTime(periodStart);

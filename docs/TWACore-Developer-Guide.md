@@ -64,7 +64,11 @@ TWAExportResult result = exportTWA.calculateFromCSV(csvData);
 
 // Access results
 float pm25_twa = result.parameterTWAs["pm2_5"];
-bool compliant = result.oshaCompliant; // true if >= 8 hours data
+bool compliant = result.oshaCompliant;        // true if 8-10 hours data
+bool tooLong = result.exceedsMaxDuration;    // true if > 10 hours
+float hours = result.dataCoverageHours;      // actual duration
+unsigned long samples = result.samplesAnalyzed;
+unsigned long gaps = result.dataGaps;
 ```
 
 ---
@@ -171,13 +175,24 @@ if (duration > _gapThreshold) {  // _gapThreshold = samplingInterval * 2
 ### OSHA Compliance Validation
 
 ```cpp
-result.oshaCompliant = (result.dataCoverageHours >= MIN_OSHA_HOURS); // >= 8.0 hours
+result.oshaCompliant = (result.dataCoverageHours >= MIN_OSHA_HOURS && result.dataCoverageHours <= 10.0f);
+result.exceedsMaxDuration = (result.dataCoverageHours > 10.0f);
 ```
 
 **Requirements:**
 - Minimum 8 hours of continuous data
+- Maximum 10 hours (single work shift limit)
 - Gaps are detected but don't automatically disqualify compliance
 - Coverage calculation accounts for total time span, not just sample count
+
+**Duration Validation:**
+
+The library enforces work shift boundaries:
+- **< 8 hours**: Insufficient data - `oshaCompliant = false`
+- **8-10 hours**: Valid single shift - `oshaCompliant = true`
+- **> 10 hours**: Multi-shift dataset - `exceedsMaxDuration = true`, export disabled
+
+Datasets exceeding 10 hours span multiple work shifts and require per-shift analysis on desktop. This prevents incorrect aggregation across shift boundaries (e.g., combining day shift + night shift into one meaningless average).
 
 ### Time-Weighted Calculation
 

@@ -42,6 +42,7 @@ struct TWAExportResult {
     std::map<String, float> parameterTWAs;  // TWA values keyed by parameter name
     float dataCoverageHours;                // Hours of data analyzed
     bool oshaCompliant;                     // true if >= MIN_OSHA_HOURS
+    bool exceedsMaxDuration;                // true if > 10 hours (multi-shift)
     unsigned long samplesAnalyzed;          // Total samples processed
     unsigned long dataGaps;                 // Number of detected data gaps
     String exportStartTime;                 // Local time string (formatted)

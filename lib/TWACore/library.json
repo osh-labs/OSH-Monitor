@@ -1,6 +1,6 @@
 {
   "name": "TWACore",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "OSHA-compliant Time-Weighted Average calculations for environmental monitoring and industrial dosimetry. Supports real-time circular buffer TWA and post-processing regulatory compliance calculations.",
   "keywords": [
     "TWA",
