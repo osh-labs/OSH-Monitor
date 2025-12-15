@@ -34,7 +34,7 @@ Without hardware abstraction, sensor-specific code would contaminate the OSH-Mon
 ┌─────────────────────────────────────┐
 │     OSH-Monitor Platform            │  ← Sensor-agnostic orchestration
 ├─────────────────────────────────────┤
-│  SEN66Core | BME680Core | SCD40Core│  ← Hardware abstraction layers
+│  SEN66Core | BME680Core | SCD40Core │  ← Hardware abstraction layers
 ├─────────────────────────────────────┤
 │  I2C Hardware (Wire) / Registers    │  ← Physical sensor interface
 └─────────────────────────────────────┘
